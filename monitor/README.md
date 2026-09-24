@@ -41,8 +41,8 @@ both missing is "Google did not alert", only one missing is FAIL.
 
 The rules and thresholds ("expected", the radius, NEAR) come from `scripts/lab.py`, which is
 imported without touching it. The GPS location lowers the verdict to DEGRADED if it is older than 1 h on a receptor with
-GpsKeeper (`MONITOR_GPSKEEPER`, default `quibdo`), or older than 20 h or null on one without it.
-AEA's own copy (the last location GMS delivered to `earthquake_alerting`) over 20 h is DEGRADED on
+GpsKeeper (`MONITOR_GPSKEEPER`, default `quibdo`), or older than 21 h or null on one without it.
+AEA's own copy (the last location GMS delivered to `earthquake_alerting`) over 21 h is DEGRADED on
 any receptor. AEA only gets a new one on a move of 1 km or more, so a flat delivery counter is
 normal (QA-90). A real alert whose listener → monitor time, with both clocks
 corrected, goes over 2 s (or never reaches the monitor) is DEGRADED too. The classification is in `verify.py`, which is pure and has the tests.

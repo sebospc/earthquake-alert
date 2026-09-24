@@ -56,6 +56,9 @@ NUDGE_AFTER_S = 6 * 60 * 60
 # No delivery seen this boot (state lost after the log rolled): past the boot's own delivery
 # window, a nudge is the quickest way to a known-fresh AEA copy.
 NUDGE_UNKNOWN_AFTER_UPTIME_S = 30 * 60
+# After NUDGE_FAILED the location path is likely broken: retrying every ~45 min only adds
+# noise until the 20 h reboot.
+NUDGE_RETRY_AFTER_FAILED_S = 2 * 60 * 60
 NUDGE_OFFSET_DEG = 2.0 / 111.195  # 2 km north
 # AEA gets a move within ~5 min; three runs per leg before giving up.
 NUDGE_LEG_S = 15 * 60
@@ -257,11 +260,18 @@ def nudge_step(serial, sensor_id, lat, lon, aea_age_s, state, now, alert_in_prog
                              and uptime_s > NUDGE_UNKNOWN_AFTER_UPTIME_S)
         if aea_age_s is None or (aea_age_s <= NUDGE_AFTER_S and not unknown_this_boot):
             return
+        if now - entry.get("nudge_failed_at", 0) < NUDGE_RETRY_AFTER_FAILED_S:
+            return
         if alert_in_progress():
             print(f"NUDGE_SKIPPED {sensor_id} ({serial}): recent eew alert")
             return
         if not keeper():
-            print(f"NUDGE_SKIPPED {sensor_id} ({serial}): no GpsKeeper, the 20 h reboot covers it")
+            # Once per boot: chaparral would say it every 5 min.
+            boot_at = None if uptime_s is None else now - uptime_s
+            told_boot_at = entry.get("no_keeper_told_boot_at")
+            if boot_at is None or told_boot_at is None or abs(boot_at - told_boot_at) > 60:
+                print(f"NUDGE_SKIPPED {sensor_id} ({serial}): no GpsKeeper, the 20 h reboot covers it")
+                entry["no_keeper_told_boot_at"] = boot_at
             return
         # Recorded before the move, but the state file is only written at the end of the
         # run: a run that dies here leaves no nudge, and the next one fixes the site.
@@ -288,6 +298,7 @@ def nudge_step(serial, sensor_id, lat, lon, aea_age_s, state, now, alert_in_prog
     elif elapsed >= 2 * NUDGE_LEG_S:
         print(f"NUDGE_FAILED {sensor_id} ({serial}): {result}")
         del entry["nudge"]
+        entry["nudge_failed_at"] = now
 
 
 def recent_alert(serial, now):

@@ -28,6 +28,13 @@ jobs:
           node monitor/test_push_receiver.mjs
           bash scripts/e2e-relay.sh
           bash infra/deploy/test_remote.sh
+      # Same Caddy as the host (Ubuntu 24.04 package). The package starts it on :80; the test
+      # uses its own ports, so stop the service and run the binary.
+      - name: caddy origin checks
+        run: |
+          sudo apt-get install -y -q caddy >/dev/null
+          sudo systemctl stop caddy
+          bash infra/https/test_caddy.sh
       # The manifests let the host prove, file by file, that what landed is what was built.
       - name: gateway and tools tarballs
         run: |

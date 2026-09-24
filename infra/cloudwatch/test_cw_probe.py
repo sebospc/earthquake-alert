@@ -23,20 +23,20 @@ assert probe.uncovered_count(status, serial_to_id.values()) == 1, "receptors not
 assert probe.uncovered_count(None, serial_to_id.values()) == 2, "no /status = all uncovered"
 print("PASS uncovered count")
 
-line = "10144/com.google.android.gms[earthquake_alerting]: total = 2h22m4s, min/max = 0s/30m, deliveries = 4"
-assert probe.DELIVERIES_TOTAL.search(line).group(1) == "4"
-state = {}
-assert probe.update_flat_seconds(state, "quibdo", 4, 1000) == 0
-assert probe.update_flat_seconds(state, "quibdo", 4, 8200) == 7200
-assert probe.update_flat_seconds(state, "quibdo", None, 9000) == 8000, "failed read must not reset the clock"
-assert probe.update_flat_seconds(state, "quibdo", 1, 9100) == 0, "reboot resets the counter: counts as a change"
-state = {}
-assert probe.update_flat_seconds(state, "quibdo", None, 1000) == 0
-assert probe.update_flat_seconds(state, "quibdo", 3, 5000) == 4000, "first good read after failures is not a change"
-assert probe.deliveries_flat_seconds(state, {"quibdo"}, 9000) == 8000
-assert probe.deliveries_flat_seconds(state, {"quibdo", "elsewhere"}, 9000) == probe.FLAT_UNKNOWN_S, \
-    "a GpsKeeper receptor with no state must page"
-print("PASS deliveries flat clock")
+now = 1_000_000.0
+journal = [
+    f"{now - 600:.6f} ip-1 python3[1]: AEA_LOCATION_AGE quibdo (emulator-5556): age_s=100 source=uptime",
+    f"{now - 300:.6f} ip-1 python3[1]: AEA_LOCATION_AGE quibdo (emulator-5556): age_s=50 source=eventlog",
+    f"{now - 300:.6f} ip-1 python3[1]: AEA_LOCATION_AGE chaparral (emulator-5554): age_s=70000 source=eventlog",
+    f"{now - 300:.6f} ip-1 python3[1]: AEA_NOT_OK chaparral (emulator-5554): reason=x",
+]
+worst, ages = probe.location_age_seconds(journal, ["chaparral", "quibdo"], now)
+assert ages == {"chaparral": 70300, "quibdo": 350}, "latest line per receptor, plus the time since it was logged"
+assert worst == 70300
+worst, ages = probe.location_age_seconds(journal, ["chaparral", "quibdo", "elsewhere"], now)
+assert worst == probe.AGE_UNKNOWN_S, "a receptor with no AEA_LOCATION_AGE line must page"
+assert probe.location_age_seconds([], ["quibdo"], now)[0] == probe.AGE_UNKNOWN_S, "no journal = unknown, pages"
+print("PASS location age from sensor-health's journal lines")
 
 offsets = {}
 assert probe.new_evidence_bytes(offsets, "quibdo", b"a\nb\n") == b"a\nb\n"
@@ -51,21 +51,16 @@ assert [metric["Name"] for metric in directive["Metrics"]] == ["GatewayUp", "Unc
 assert document["GatewayUp"] == 1 and directive["Dimensions"] == [["Host"]] and "Host" in document
 print("PASS EMF document")
 
-# main(): no network, no adb, no agent. Metrics captured from what would go over UDP.
+# main(): no network, no adb, no agent, no journal. Metrics captured from what would go over UDP.
 work = tempfile.mkdtemp()
 probe.STATE_FILE = os.path.join(work, "state.json")
 probe.LISTENER_LOG_DIR = work
 probe.HOST = "i-test"
-probe.GPSKEEPER = {"quibdo"}
 sent = []
 probe.send = lambda document: sent.append(json.loads(document))
-deliveries = {"emulator-5554": 7, "emulator-5556": 4}
-
-
-def fake_adb(serial, *args, timeout=60):
-    if args[0] == "shell":
-        return f"gms[earthquake_alerting]: total = 1h, min/max = 0s/30m, deliveries = {deliveries[serial]}".encode()
-    return b'{"event":"x"}\n'
+probe.adb = lambda serial, *args, timeout=60: b'{"event":"x"}\n'
+journal_now = []
+probe.read_journal = lambda now: journal_now
 
 
 def run(now, status):
@@ -73,18 +68,19 @@ def run(now, status):
     probe.read_status = lambda: status
     probe.main(sensor_map.name, now=now)
     return {key: value for document in sent for key, value in document.items()
-            if key in ("GatewayUp", "UncoveredReceptors", "DeliveriesFlatSeconds")}
+            if key in ("GatewayUp", "UncoveredReceptors", "LocationAgeMaxSeconds")}
 
 
-probe.adb = fake_adb
 up = {"sensors": [{"id": "chaparral", "covered": True}, {"id": "quibdo", "covered": True}]}
-assert run(900, up) == {"GatewayUp": 1, "UncoveredReceptors": 0, "DeliveriesFlatSeconds": 0}
-assert run(960, None) == {"GatewayUp": 0, "UncoveredReceptors": 2, "DeliveriesFlatSeconds": 60}, \
+journal_now[:] = [f"{900 - 60}.0 h python3[1]: AEA_LOCATION_AGE chaparral (emulator-5554): age_s=10 source=eventlog",
+                  f"{900 - 60}.0 h python3[1]: AEA_LOCATION_AGE quibdo (emulator-5556): age_s=20 source=uptime"]
+assert run(900, up) == {"GatewayUp": 1, "UncoveredReceptors": 0, "LocationAgeMaxSeconds": 80}
+assert open(os.path.join(work, "listener-quibdo.jsonl")).read() == '{"event":"x"}\n', "900 s is a slow minute"
+assert run(960, None) == {"GatewayUp": 0, "UncoveredReceptors": 2, "LocationAgeMaxSeconds": 140}, \
     "gateway down must send GatewayUp 0, not skip it"
-assert open(os.path.join(work, "listener-quibdo.jsonl")).read() == '{"event":"x"}\n'
 
-deliveries["emulator-5556"] = 5  # quibdo moves, chaparral (no GpsKeeper) stays flat 2 h
-assert run(900 + 7200, up)["DeliveriesFlatSeconds"] == 0, "chaparral is flat but has no GpsKeeper: must not page"
+journal_now[:] = journal_now[:1]  # quibdo's line gone: sensor-health stopped checking it
+assert run(1020, up)["LocationAgeMaxSeconds"] == probe.AGE_UNKNOWN_S
 
 
 def broken_adb(*args, **kwargs):
@@ -92,11 +88,8 @@ def broken_adb(*args, **kwargs):
 
 
 probe.adb = broken_adb
-metrics = run(900 + 7200 + 9000, up)  # a slow minute: the slow pass runs and fails
-assert metrics["GatewayUp"] == 1 and metrics["DeliveriesFlatSeconds"] == 9000, \
-    "a failing slow pass must not hold back the fast metrics, and the flat clock keeps growing"
-
-probe.GPSKEEPER = {"not-on-this-host"}
-assert run(900 + 7200 + 9060, up)["DeliveriesFlatSeconds"] == probe.FLAT_UNKNOWN_S
-print("PASS main: fast metrics first, failures page, GpsKeeper filter")
+metrics = run(1800, up)  # a slow minute: the evidence pass runs and fails
+assert metrics["GatewayUp"] == 1 and "LocationAgeMaxSeconds" in metrics, \
+    "a failing evidence pass must not hold back any metric"
+print("PASS main: every metric every minute, a missing reading pages, failures do not block")
 os.unlink(sensor_map.name)

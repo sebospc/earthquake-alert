@@ -431,6 +431,9 @@ def control_fresh(readings, device, t):
     return reading["age_s"] - (reading["at"] - t) <= CONTROL_MAX_LOCATION_AGE_S
 
 
+# sensor-health reboots a receptor past 20 h (two runs), and it is alerting again ~20 min later.
+# Flag only a reboot that did not happen or did not help, still 3 h before the ~24 h blind limit.
+RECEPTOR_MAX_LOCATION_AGE_S = 21 * 3600
 # With GpsKeeper the GPS fix is refreshed every minute.
 KEEPER_MAX_LOCATION_AGE_S = 3600
 
@@ -450,16 +453,16 @@ def location_problems(readings, keeper_sensors):
         if not mine:
             problems.append(f"{sensor}: no GMS location readings")
             continue
-        limit = KEEPER_MAX_LOCATION_AGE_S if sensor in keeper_sensors else CONTROL_MAX_LOCATION_AGE_S
+        limit = KEEPER_MAX_LOCATION_AGE_S if sensor in keeper_sensors else RECEPTOR_MAX_LOCATION_AGE_S
         if any(r["age_s"] is None for r in mine):
             problems.append(f"{sensor}: GMS has no location")
         elif max(r["age_s"] for r in mine) > limit:
             problems.append(f"{sensor}: GMS location {max(r['age_s'] for r in mine) / 3600:.1f} h "
                             f"(> {limit / 3600:.0f} h)")
         alert_ages = [r["alert_age_s"] for r in mine if r.get("alert_age_s") is not None]
-        if alert_ages and max(alert_ages) > CONTROL_MAX_LOCATION_AGE_S:
+        if alert_ages and max(alert_ages) > RECEPTOR_MAX_LOCATION_AGE_S:
             problems.append(f"{sensor}: AEA's location {max(alert_ages) / 3600:.1f} h old "
-                            f"(> {CONTROL_MAX_LOCATION_AGE_S / 3600:.0f} h)")
+                            f"(> {RECEPTOR_MAX_LOCATION_AGE_S / 3600:.0f} h)")
     return problems
 
 

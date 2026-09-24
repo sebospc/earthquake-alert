@@ -2,10 +2,7 @@
 # Installs log shipping and the alarm probe on the receptor host. Idempotent, touches no
 # emulator and no gateway process. Needs the instance role with CloudWatchAgentServerPolicy.
 #
-#   sudo AEA_CW_GPSKEEPER=quibdo infra/cloudwatch/install.sh
-#
-# AEA_CW_GPSKEEPER: this host's receptors running GpsKeeperService, comma separated, or ""
-# when none. Required: the deliveries alarm must watch exactly the right receptors.
+#   sudo infra/cloudwatch/install.sh
 #
 # Survives a spot stop/start: everything lives on the EBS root and every unit is enabled.
 set -euo pipefail
@@ -17,7 +14,6 @@ EMULATOR_USER=aea
 REGION="${AWS_REGION:-sa-east-1}"
 
 [[ $EUID -eq 0 ]] || { echo "run as root" >&2; exit 1; }
-[[ -n ${AEA_CW_GPSKEEPER+set} ]] || { echo "set AEA_CW_GPSKEEPER (\"\" if no GpsKeeper receptor here)" >&2; exit 1; }
 imds_token=$(curl -fsS -m 5 -X PUT http://169.254.169.254/latest/api/token -H "X-aws-ec2-metadata-token-ttl-seconds: 60")
 instance_id=$(curl -fsS -m 5 -H "X-aws-ec2-metadata-token: $imds_token" http://169.254.169.254/latest/meta-data/instance-id)
 
@@ -40,7 +36,8 @@ Type=oneshot
 User=$EMULATOR_USER
 Nice=10
 Environment=AEA_CW_HOST=$instance_id
-Environment=AEA_CW_GPSKEEPER=$AEA_CW_GPSKEEPER
+# Reads sensor-health's AEA_LOCATION_AGE lines from the journal.
+SupplementaryGroups=systemd-journal
 ExecStart=/usr/bin/python3 $TOOLS_DIR/aea-cw-probe.py $SENSOR_MAP
 EOF
 
@@ -89,5 +86,5 @@ sleep 5
 /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a status | grep -q '"status": "running"'
 systemctl start aea-cw-probe.service
 systemctl is-active --quiet aea-cw-journal.service
-echo "CLOUDWATCH_INSTALL_OK host=$instance_id gpskeeper=$AEA_CW_GPSKEEPER"
-echo "next: deploy infra/cloudwatch/host-alarms.yml with Host=$instance_id"
+echo "CLOUDWATCH_INSTALL_OK host=$instance_id"
+echo "next: deploy infra/cloudwatch/host-alarms.yml with Host=$instance_id JournalHostname=$(hostname)"

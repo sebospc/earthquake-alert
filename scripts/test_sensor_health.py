@@ -445,6 +445,27 @@ assert nudge(state, 0, 40 * MINUTE, uptime_s=40 * MINUTE, source="eventlog") is 
 assert nudge(state, 0, 40 * MINUTE, uptime_s=40 * MINUTE, source="uptime", keeper=False) is None
 assert nudge(state, 0, 40 * MINUTE, uptime_s=40 * MINUTE, source="uptime")["phase"] == "out"
 
+# After NUDGE_FAILED, 2 h before the next try (the path is likely broken).
+adb_calls.clear()
+state = {}
+nudge(state, 0, 7 * HOUR)
+nudge(state, 15 * MINUTE, 7 * HOUR + 15 * MINUTE)
+with contextlib.redirect_stdout(io.StringIO()):
+    assert nudge(state, 45 * MINUTE, 7 * HOUR + 45 * MINUTE) is None
+fixes = len(geo_fixes())
+assert nudge(state, 45 * MINUTE + 2 * HOUR - 1, 9 * HOUR) is None and len(geo_fixes()) == fixes, "retried within 2 h"
+with contextlib.redirect_stdout(io.StringIO()):
+    assert nudge(state, 45 * MINUTE + 2 * HOUR, 9 * HOUR)["phase"] == "out"
+
+# No GpsKeeper: said once per boot, not every 5 min.
+state = {}
+printed = io.StringIO()
+with contextlib.redirect_stdout(printed):
+    for run in range(3):
+        nudge(state, run * 5 * MINUTE, 7 * HOUR, keeper=False, uptime_s=8 * HOUR + run * 5 * MINUTE)
+    nudge(state, 20 * MINUTE, 7 * HOUR, keeper=False, uptime_s=2 * MINUTE)  # rebooted
+assert printed.getvalue().count("NUDGE_SKIPPED quibdo (emulator-5556): no GpsKeeper") == 2, printed.getvalue()
+
 # An alert mid-nudge: the legs hold, no geo fix change until it is 10 min old.
 adb_calls.clear()
 state = {}

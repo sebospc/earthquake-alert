@@ -30,7 +30,7 @@ and, if the APK changed, `./aws-bootstrap.sh listener ~/listener.apk chaparral q
   deliveries to `earthquake_alerting` of each AWS receptor ("GMS location on the AWS receptors" section of the
   certificate). 18:35 UTC: quibdo 38 s and 4 deliveries (growing); chaparral 4.5 h and 2.
   The verdict uses it: DEGRADED if the GPS age is > 1 h with GpsKeeper, or > 20 h / none without it, and
-  if AEA's own location is > 20 h on any receptor (QA-90; on disk, loads at the next restart).
+  if AEA's own location is > 21 h on any receptor (QA-90; 21 h = after the planned 20 h reboot had its chance).
   The "deliveries flat 2 h" rule was wrong and is gone: AEA only gets a location on a move of ≥ 1 km.
 - Certifier, on disk and not loaded yet (next natural restart): DEGRADED if a real alert's listener → monitor
   time goes over 2 s, with the emulator skew and the Mac NTP offset corrected (24-sep: 0.52 s). Origin in ms
@@ -38,7 +38,7 @@ and, if the APK changed, `./aws-bootstrap.sh listener ~/listener.apk chaparral q
 - Certifier, on disk, loads at next natural restart: Mac control retired at 19:11 UTC. Catalog-only
   ground truth; an unexplained AWS miss is FAIL, labelled "Mac control retired", no Mac rows or downtime.
   Guard: 3 explained misses on one receptor in 7 days with no hit in between = DEGRADED.
-- Certifier on disk, loads at the next natural restart (pid 71395 does not have it): live notice when a
+- Certifier, live in pid 30920 since 23:33 UTC: live notice when a
   receptor is uncovered ≥ 15 min (DEGRADED) / ≥ 60 min (FAIL), then RESTORED, as a macOS notification plus
   monitor/data/live-alerts.jsonl (QA-92). Also: AEA's delivery remembered across a log roll, and rolled-back
   deploys not excused.
@@ -50,7 +50,7 @@ and, if the APK changed, `./aws-bootstrap.sh listener ~/listener.apk chaparral q
 - **English migration (24-sep):** docs, comments, logs, test names and certificate template are now English; tests green. Alert text for Colombian users, the PWA UI and `docs/outreach/senadora-villalba.md` stay Spanish on purpose.
   Certifier labels are now CERTIFIED/DEGRADED/FAIL on disk, and live since the restart (pid 71395, 19:33 UTC); listener APK changed (UI strings only), not deployed.
 
-- **devops (24-sep):** nothing deployed, nothing pushed. CI `.github/workflows/ci.yml` (needs secret `ANDROID_DEBUG_KEYSTORE_B64` + var `LISTENER_CERT_SHA256`; dedicated key `~/.android/aea-ci-debug.keystore`, switched with the GpsKeeper APK rollout). CloudWatch `infra/cloudwatch/` (QA OK; 2 alarms now, the 3rd = `AEA_LOCATION_AGE` > 20 h once sensor-health emits it). Deploy `deploy.yml` (gateway+tools after green CI on main, `production` approval, OIDC + S3 presigned + SSM, gateway rolls back if it cannot prove coverage) and `deploy-apk.yml` (one receptor per run, held by var `APK_DEPLOY_ENABLED`). AWS side in `infra/deploy/stack.yml`, deployed by the user. HTTPS staging in `infra/https/` (EIP + CloudFront → Caddy :80 allowlist → gateway; SG :80 only from the CloudFront prefix list; `verify.sh <url>`), not deployed. Trap: `aws-bootstrap.sh listener` maps serials by argument position and rewrites the whole sensor map: never run it for one receptor.
+- **devops (24-sep):** nothing deployed, nothing pushed. CI `.github/workflows/ci.yml` (needs secret `ANDROID_DEBUG_KEYSTORE_B64` + var `LISTENER_CERT_SHA256`; dedicated key `~/.android/aea-ci-debug.keystore`, switched with the GpsKeeper APK rollout). CloudWatch `infra/cloudwatch/` (per host: gateway down, receptor uncovered, location age > 21 h from `AEA_LOCATION_AGE`, AEA_NOT_OK x3 in 15 min, NUDGE_FAILED; ≈ $2/month). Deploy `deploy.yml` (gateway+tools after green CI on main, `production` approval, OIDC + S3 presigned + SSM, gateway rolls back if it cannot prove coverage) and `deploy-apk.yml` (one receptor per run, held by var `APK_DEPLOY_ENABLED`). AWS side in `infra/deploy/stack.yml`, deployed by the user. HTTPS staging in `infra/https/` (EIP + CloudFront → Caddy :80 allowlist → gateway; SG :80 only from the CloudFront prefix list; `verify.sh <url>`), not deployed. Trap: `aws-bootstrap.sh listener` maps serials by argument position and rewrites the whole sensor map: never run it for one receptor.
 
 ## Open
 
@@ -80,5 +80,6 @@ and, if the APK changed, `./aws-bootstrap.sh listener ~/listener.apk chaparral q
 
 - **coordinator:** CLAUDE.md, STATUS.md and docs/roles/* created. Measuring GpsKeeper on AWS quibdo (installed 18:04 UTC): still to confirm over hours the earthquake_alerting deliveries. If it passes, install it on chaparral (AWS) and on the Mac. Decisions waiting for the user: HTTPS domain, retire or keep the Mac, local git init.
 - **developer:** nothing half done. gateway 55/55, test_sensor_health 9/9, JUnit and APK green. Last change: GpsKeeperService (process `:gps`) + geo fix on every sensor-health run. Waiting for the earthquake_alerting measurement. Traps not in any other doc: `Map.groupBy` does not exist in Node 18; `node -e` breaks when importing server.js (the main check uses argv[1]), so a .mjs is used. Script tests must never let the real `lab.adb` through, because on the Mac emulator-5554 is the live fleet.
-- **developer-qa:** certifier pid 71395 since 19:33 UTC, all rules loaded (clocks, Mac retired 19:11, canary pairs, AEA age); stop with `kill 71395`. QA-90 critical: sensor-health reboot must use AEA's location age; if developer's step 1 is not live by 25-sep 16:00 UTC, tell the coordinator (manual quibdo reboot before 18:00). Pending reviews: developer's AEA age + 1.1 km nudge. Tests: gateway 58/58, test_verify 21, test_sensor_health 16. On disk for the next certifier restart: live coverage notices (QA-92), AEA delivery memory, rolled-back deploys not excused.
+- **developer-qa:** certifier pid 30920 since 23:33 UTC, all rules loaded (clocks, Mac retired 19:11, canary pairs, AEA age 21 h, live coverage notices QA-92); stop with `kill 30920`. QA-90 critical: sensor-health reboot must use AEA's location age; if developer's step 1 is not live by 25-sep 16:00 UTC, tell the coordinator (manual quibdo reboot before 18:00). Pending reviews: developer's AEA age + 1.1 km nudge. Tests: gateway 58/58, test_verify 21, test_sensor_health 16.
+- **devops-earthquake:** tasks 1-4 written, tested locally and QA OK; nothing deployed or pushed. Waiting for: user IAM steps + GitHub setup (coordinator relays), then logs:TestMetricFilter on 3 real journal lines (AEA_NOT_OK match, NUDGE_FAILED match, reason=booting no match) before the host-alarms stack. APK deploy on hold (`APK_DEPLOY_ENABLED`).
 - **comunicacion-humano** (session closed): outreach dropped by the user on 2026-09-24. Drafts stay in docs/outreach/ as history; nothing is sent.

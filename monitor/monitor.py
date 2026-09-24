@@ -548,7 +548,7 @@ def render(day, decision, reasons, coverage, probes, findings, unexplained, aler
               "FALSE confirmed (24 h); a receptor uncovered > 60 min in a row. DEGRADED = > 15 min uncovered "
               "in the day; probes lost > 5 % or p95 > 10 s; real alert delivered > 10 s after capture; "
               "the monitor saw < 90 % of the minutes; GMS GPS location > 1 h on a receptor with GpsKeeper, "
-              "> 20 h or null on one without it; AEA's own location (last delivery to earthquake_alerting) > 20 h "
+              "> 21 h or null on one without it; AEA's own location (last delivery to earthquake_alerting) > 21 h "
               "on any receptor. With the Mac control retired, 3 explained misses on one receptor in 7 days with no hit in between. MISSes explained by Google do not lower the verdict.",
               "", f"Minutes observed by the monitor: {completeness:.0%}.", "", "## Coverage per receptor", "",
               "| receptor | min uncovered | longest gap | min in deploy or intervention (not counted) | gaps |",

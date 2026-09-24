@@ -21,12 +21,10 @@
 	# route keeps the order written here; Caddy would otherwise run handle before respond.
 	route {
 		# Every CloudFront distribution shares that prefix list; only ours sends this header.
+		# Without the env file (a manual `caddy run`) the value is empty and Caddy refuses the
+		# config ("malformed header matcher"): it fails closed, test_caddy.sh proves it.
 		@not_our_cloudfront not header X-Origin-Verify {$AEA_ORIGIN_SECRET}
 		respond @not_our_cloudfront 403
-		# Started without the env file (a manual `caddy run`), the secret is empty and the check
-		# above would only test that the header exists. Then refuse everything instead.
-		@secret_unset expression `"{$AEA_ORIGIN_SECRET}" == ""`
-		respond @secret_unset 403
 
 		# Allowlist, so a new internal endpoint stays private by default. /events, /heartbeat,
 		# /probe and /evidence are HMAC or monitor-only: never public.

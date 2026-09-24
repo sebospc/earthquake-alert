@@ -158,10 +158,27 @@ deploy_apk() {
   # The on-device evidence dies with an uninstall: keep a copy first, every time.
   install -d -o "$EMULATOR_USER" -m 0750 "$EVIDENCE_BACKUP_DIR"
   backup="$EVIDENCE_BACKUP_DIR/$sensor_id-$(date -u +%Y%m%dT%H%M%SZ).jsonl"
-  # No file yet (fresh receptor) is an empty backup; a failed read stops the deploy.
+  # No file yet (fresh receptor) is an empty backup. A failed read stops the deploy: it is
+  # also the read the alert check below needs, and unreadable must mean postpone.
   aea_adb -s "$serial" exec-out run-as "$PACKAGE" sh -c "$EVIDENCE_READ" > "$backup" \
-    || die "could not back up $sensor_id evidence, not touching the app"
+    || die "DEPLOY_POSTPONED: could not read $sensor_id evidence, not touching the app"
   echo "evidence backup: $backup ($(wc -c < "$backup") bytes)"
+  # The install kills the listener: one still retrying an alert the gateway has not seen
+  # would lose it. Same rule as sensor-health's eew_posts(): an eew_* NOTIFICATION_POSTED
+  # captured in the last ALERT_QUIET_S.
+  python3 - "$backup" "$ALERT_QUIET_S" <<'PY' || die "DEPLOY_POSTPONED: $sensor_id listener captured an eew alert in the last ${ALERT_QUIET_S}s"
+import json, sys, time
+now = time.time()
+for line in open(sys.argv[1], errors="replace"):
+    try:
+        record = json.loads(line)
+    except ValueError:
+        continue
+    if (isinstance(record, dict) and record.get("event_type") == "NOTIFICATION_POSTED"
+            and str(record.get("channel_id") or "").startswith("eew_")
+            and now - record.get("captured_at_ms", 0) / 1000 < float(sys.argv[2])):
+        sys.exit(1)
+PY
 
   # The listener sends a canary as soon as it connects: anything after this instant is ours.
   local deployed_at

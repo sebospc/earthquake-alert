@@ -146,3 +146,30 @@ output=$(ADB="$WORK/bin/fake-adb" EMULATOR_USER="$(id -un)" EVIDENCE_BACKUP_DIR=
   && fail "GPS_KEEPER_FAILED in the new evidence was missed"
 grep -q "GPS_KEEPER_FAILED in evidence" <<<"$output" || fail "wrong failure: $output"
 echo "PASS GPS_KEEPER_FAILED after a key switch fails the deploy"
+
+# The listener's own evidence: a recent eew post postpones before anything is touched, an old
+# one does not, and an unreadable evidence file postpones too.
+recent_ms=$(( $(date +%s) * 1000 - 60000 ))
+printf '{"event_type":"NOTIFICATION_POSTED","channel_id":"eew_alerts","captured_at_ms":%s}\n' "$recent_ms" > "$WORK/device-evidence.jsonl"
+: > "$WORK/relay.json"
+apk_run() {
+  ADB="$WORK/bin/fake-adb" EMULATOR_USER="$(id -un)" EVIDENCE_BACKUP_DIR="$WORK/backup" \
+    FAKE_DEVICE_EVIDENCE="$WORK/device-evidence.jsonl" FAKE_RELAY_JSON="$WORK/relay.json" \
+    COVERED_TIMEOUT_S=5 bash "$HERE/remote.sh" apk "$WORK/bundle" quibdo --key-switch 2>&1
+}
+output=$(apk_run) && fail "apk deployed right after an eew alert on the receptor"
+grep -q "DEPLOY_POSTPONED: quibdo listener captured an eew alert" <<<"$output" || fail "wrong failure: $output"
+[[ ! -s "$WORK/relay.json" ]] || fail "postponed deploy touched the app"
+echo "PASS apk postponed after a recent eew post on the listener, app untouched"
+
+printf '{"event_type":"NOTIFICATION_POSTED","channel_id":"eew_alerts","captured_at_ms":%s}\n' "$((recent_ms - 3600000))" > "$WORK/device-evidence.jsonl"
+printf '{"event_type":"NOTIFICATION_POSTED","channel_id":"other","captured_at_ms":%s}\n' "$recent_ms" >> "$WORK/device-evidence.jsonl"
+output=$(apk_run) || fail "an old eew post or a non-eew post must not block: $output"
+echo "PASS an old eew post or a recent non-eew post does not block"
+
+rm "$WORK/device-evidence.jsonl"  # the fake adb's cat fails: unreadable
+: > "$WORK/relay.json"
+output=$(apk_run) && fail "apk deployed with unreadable listener evidence"
+grep -q "DEPLOY_POSTPONED: could not read quibdo evidence" <<<"$output" && [[ ! -s "$WORK/relay.json" ]] \
+  || fail "unreadable evidence must postpone before touching the app: $output"
+echo "PASS unreadable listener evidence postpones"

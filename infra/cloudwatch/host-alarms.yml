@@ -1,7 +1,8 @@
 # The three alarms for one receptor host, fed by aea-cw-probe.py with Host=<instance id>.
 # One stack per host, so a dead host cannot hide behind a healthy one. Needs stack.yml first.
 #   aws cloudformation deploy --region sa-east-1 --stack-name aea-lab-alarms-<instance id> \
-#     --template-file infra/cloudwatch/host-alarms.yml --parameter-overrides Host=<instance id> HasGpsKeeper=true \
+#     --template-file infra/cloudwatch/host-alarms.yml \
+#     --parameter-overrides Host=<instance id> JournalHostname=<hostname, printed by install.sh> \
 #     --tags project=aea-lab
 # Retiring a host: delete its stack, or its alarms page forever on missing data.
 AWSTemplateFormatVersion: "2010-09-09"
@@ -9,12 +10,10 @@ Parameters:
   Host:
     Type: String
     AllowedPattern: "i-[0-9a-f]+"
-  HasGpsKeeper:
+  # The journal lines carry the hostname, not the instance id; install.sh prints it.
+  JournalHostname:
     Type: String
-    AllowedValues: ["true", "false"]
-    Description: Same as AEA_CW_GPSKEEPER being non-empty on the host. Without it the metric never comes and the alarm would page forever.
-Conditions:
-  WatchDeliveries: !Equals [!Ref HasGpsKeeper, "true"]
+    AllowedPattern: "[a-z0-9.-]+"
 Resources:
   # Every alarm: missing data = the host, the agent or the probe is gone. That pages.
   GatewayDownAlarm:
@@ -51,20 +50,77 @@ Resources:
       AlarmActions: [!ImportValue aea-lab-alert-topic]
       OKActions: [!ImportValue aea-lab-alert-topic]
 
-  DeliveriesFlatAlarm:
+  # sensor-health's AEA_LOCATION_AGE, read by the probe. Past ~24 h GMS stops alerting (QA-84).
+  # sensor-health itself reboots at > 20 h, so 21 h (20 h + 2 runs + boot and first delivery)
+  # means that repair did not happen or did not help, still 3 h before the blind limit. Same
+  # threshold as the certifier. A receptor with no line in 20 min also lands here (1e7).
+  LocationAgeAlarm:
     Type: AWS::CloudWatch::Alarm
-    Condition: WatchDeliveries
     Properties:
-      AlarmName: !Sub aea-lab-${Host}-earthquake-alerting-flat
-      AlarmDescription: !Sub A GpsKeeper receptor on ${Host} has had no new earthquake_alerting delivery for over 2 h. Per-receptor totals are in /aea-lab/metrics.
+      AlarmName: !Sub aea-lab-${Host}-location-age
+      AlarmDescription: !Sub A receptor on ${Host} has a GMS location older than 21 h (the 20 h reboot did not fix it), or sensor-health has not reported its age for 20 min. Per-receptor ages are in /aea-lab/metrics.
       Namespace: AeaLab
-      MetricName: DeliveriesFlatSeconds
+      MetricName: LocationAgeMaxSeconds
       Dimensions: [{ Name: Host, Value: !Ref Host }]
       Statistic: Maximum
       Period: 300
       EvaluationPeriods: 1
-      Threshold: 7200
+      Threshold: 75600
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: breaching
+      AlarmActions: [!ImportValue aea-lab-alert-topic]
+      OKActions: [!ImportValue aea-lab-alert-topic]
+
+  # From the journal shipped to /aea-lab/journal, e.g.
+  # "2026-09-24T23:29:03+00:00 ip-172-31-38-195 python3[48946]: AEA_NOT_OK quibdo (emulator-5556): reason=..."
+  # These count events, so no data just means nothing happened: GatewayUp covers a dead host.
+  # Term patterns (both words anywhere in the line), not positional ones: the "python3[48946]:"
+  # token holds brackets, which space-delimited patterns treat as field delimiters.
+  AeaNotOkFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: /aea-lab/journal
+      # reason=booting follows every planned reboot for 2-3 runs: not a problem.
+      FilterPattern: !Sub '"AEA_NOT_OK" "${JournalHostname}" -"reason=booting"'
+      MetricTransformations:
+        - { MetricNamespace: AeaLab, MetricName: !Sub "AeaNotOk-${Host}", MetricValue: "1" }
+  # sensor-health runs every 5 min: 3 AEA_NOT_OK runs inside 15 min is "not OK for ~15 min".
+  AeaNotOkAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub aea-lab-${Host}-aea-not-ok
+      AlarmDescription: !Sub sensor-health on ${Host} logged AEA_NOT_OK 3 times in 15 min. The reason is in /aea-lab/journal.
+      Namespace: AeaLab
+      MetricName: !Sub AeaNotOk-${Host}
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 15
+      DatapointsToAlarm: 3
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!ImportValue aea-lab-alert-topic]
+      OKActions: [!ImportValue aea-lab-alert-topic]
+
+  NudgeFailedFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: /aea-lab/journal
+      FilterPattern: !Sub '"NUDGE_FAILED" "${JournalHostname}"'
+      MetricTransformations:
+        - { MetricNamespace: AeaLab, MetricName: !Sub "NudgeFailed-${Host}", MetricValue: "1" }
+  NudgeFailedAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub aea-lab-${Host}-nudge-failed
+      AlarmDescription: !Sub sensor-health on ${Host} logged NUDGE_FAILED - the location path is likely broken, the 20 h reboot is the fallback. Details in /aea-lab/journal.
+      Namespace: AeaLab
+      MetricName: !Sub NudgeFailed-${Host}
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
       AlarmActions: [!ImportValue aea-lab-alert-topic]
       OKActions: [!ImportValue aea-lab-alert-topic]

@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Feeds the three CloudWatch alarms and ships the listener evidence. Runs every minute.
+"""Feeds the CloudWatch alarms and ships the listener evidence. Runs every minute.
 
 Every run: GatewayUp and UncoveredReceptors from the local /status, sent first so nothing
-later can hold them back. Then DeliveriesFlatSeconds, computed from the state file.
-Every SLOW_EVERY_MIN minutes (and on the first run) the slow pass refreshes that state:
-earthquake_alerting's delivery total per receptor, and the new bytes of each receptor's
-on-device evidence, appended to LISTENER_LOG_DIR for the agent.
+later can hold them back. Then LocationAgeMaxSeconds: the worst GMS location age over this
+host's receptors, read from sensor-health's AEA_LOCATION_AGE lines in the journal (one
+source of truth, the probe does not measure it again).
+Every SLOW_EVERY_MIN minutes: the new bytes of each receptor's on-device evidence, appended
+to LISTENER_LOG_DIR for the agent.
 
 Metrics go out as EMF over UDP to the CloudWatch agent, with a Host dimension (one alarm set
 per host). Every alarm treats missing data as breaching: a dead probe, agent or host pages.
-A slow pass that fails leaves the state stale, so the flat clock keeps growing: loud too.
 
-    AEA_CW_HOST=i-... AEA_CW_GPSKEEPER=quibdo aea-cw-probe.py /etc/earthquake-sensors.map
+    AEA_CW_HOST=i-... aea-cw-probe.py /etc/earthquake-sensors.map
 """
 import json, os, re, socket, subprocess, sys, time, urllib.request
 
@@ -22,16 +22,15 @@ NAMESPACE = "AeaLab"
 STATE_FILE = "/var/lib/aea-cw/probe-state.json"
 LISTENER_LOG_DIR = "/var/log/aea-cw"
 LISTENER_EVIDENCE = "files/notification-evidence.jsonl"
-# ponytail: dumpsys of GMS is not free on a 2 vCPU guest; 15 min is plenty for a 2 h rule.
 SLOW_EVERY_MIN = 15
-# Receptors with GpsKeeperService: only these must keep getting earthquake_alerting deliveries.
-# Set per host by install.sh, no default: a wrong default silently watches the wrong receptor.
-GPSKEEPER = set(filter(None, os.environ.get("AEA_CW_GPSKEEPER", "").split(",")))
 HOST = os.environ.get("AEA_CW_HOST", "")
-# A configured receptor with no reading at all: over any threshold, so it pages.
-FLAT_UNKNOWN_S = 10 ** 7
-# e.g. "...gms[earthquake_alerting]: total = 2h22m4s, min/max = 0s/30m, deliveries = 4"
-DELIVERIES_TOTAL = re.compile(r"earthquake_alerting\]: total.*deliveries = (\d+)")
+# A receptor with no reading at all: over any threshold, so it pages.
+AGE_UNKNOWN_S = 10 ** 7
+# sensor-health runs every 5 min; 20 min without a line means it stopped reporting.
+LOCATION_AGE_WINDOW_S = 20 * 60
+# journalctl -o short-unix, e.g.
+# "1727220543.123456 ip-172-31-38-195 python3[48946]: AEA_LOCATION_AGE quibdo (emulator-5556): age_s=22989 source=uptime"
+LOCATION_AGE_LINE = re.compile(r"^(\d+(?:\.\d+)?) \S+ \S+: AEA_LOCATION_AGE (\S+) \(\S+\): age_s=(\d+)")
 
 
 def receptors(sensor_map_path):
@@ -48,25 +47,28 @@ def uncovered_count(status, expected_ids):
     return len(set(expected_ids) - covered_ids)
 
 
-def update_flat_seconds(state, sensor_id, total, now):
-    """Seconds since this receptor's delivery total last changed. A failed read (total None)
-    never resets the clock, so an offline receptor also ends up flat; neither does the first
-    good read after failed ones. A reboot resets the counter, and that is a change too."""
-    previous = state.get(sensor_id)
-    if previous is None:
-        state[sensor_id] = {"total": total, "changed_at": now}
-    elif total is not None and previous["total"] is None:
-        previous["total"] = total
-    elif total is not None and total != previous["total"]:
-        state[sensor_id] = {"total": total, "changed_at": now}
-    return now - state[sensor_id]["changed_at"]
+def location_age_seconds(journal_lines, expected_ids, now):
+    """Worst location age now, over this host's receptors: the last reported age plus the
+    time since it was reported. A receptor with no line in the window counts as unknown,
+    which pages: sensor-health stopped, or the receptor is not being checked."""
+    latest = {}
+    for line in journal_lines:
+        match = LOCATION_AGE_LINE.match(line)
+        if match:
+            logged_at, sensor_id, age_s = float(match.group(1)), match.group(2), int(match.group(3))
+            latest[sensor_id] = age_s + (now - logged_at)
+    ages = {sensor_id: latest.get(sensor_id, AGE_UNKNOWN_S) for sensor_id in expected_ids}
+    return (max(ages.values()) if ages else AGE_UNKNOWN_S), ages
 
 
-def deliveries_flat_seconds(deliveries_state, gpskeeper_ids, now):
-    """Worst flat clock over the GpsKeeper receptors. One with no state (not in this host's
-    map, or never read) counts as flat: a config slip must page, not go quiet."""
-    return max((now - deliveries_state[sensor_id]["changed_at"]) if sensor_id in deliveries_state
-               else FLAT_UNKNOWN_S for sensor_id in gpskeeper_ids)
+def read_journal(now):
+    try:
+        done = subprocess.run(["journalctl", "-u", "sensor-health", "--since", f"@{int(now - LOCATION_AGE_WINDOW_S)}",
+                               "-o", "short-unix", "--no-pager", "-q"],
+                              capture_output=True, text=True, timeout=30)
+        return done.stdout.splitlines() if done.returncode == 0 else []
+    except (subprocess.TimeoutExpired, OSError):
+        return []
 
 
 def new_evidence_bytes(state, sensor_id, evidence):
@@ -107,15 +109,8 @@ def read_status():
         return None
 
 
-def slow_pass(serial_to_id, state, now):
-    detail = {}
+def ship_listener_evidence(serial_to_id, state):
     for serial, sensor_id in serial_to_id.items():
-        dump = adb(serial, "shell", "dumpsys activity service com.google.android.gms | grep -m1 'earthquake_alerting\\]: total'")
-        match = DELIVERIES_TOTAL.search(dump.decode(errors="replace")) if dump else None
-        total = int(match.group(1)) if match else None
-        flat = update_flat_seconds(state["deliveries"], sensor_id, total, now)
-        detail[sensor_id] = {"deliveries_total": total, "deliveries_flat_s": round(flat)}
-
         # ponytail: whole file every pass (5 KB today); `tail -c +offset` if it grows to MBs.
         evidence = adb(serial, "exec-out", "run-as", "com.earthquakes.relay", "cat", LISTENER_EVIDENCE)
         if evidence is not None:
@@ -123,7 +118,6 @@ def slow_pass(serial_to_id, state, now):
             if fresh:
                 with open(os.path.join(LISTENER_LOG_DIR, f"listener-{sensor_id}.jsonl"), "ab") as log:
                     log.write(fresh if fresh.endswith(b"\n") else fresh + b"\n")
-    return detail
 
 
 def load_state():
@@ -133,10 +127,9 @@ def load_state():
     except FileNotFoundError:
         state = {}
     except (OSError, ValueError) as error:
-        # Starting over resets the flat clock once: say so where the journal ships it.
+        # Starting over re-ships the evidence once: duplicates, never a gap.
         print(f"probe state unreadable, starting over: {error}", file=sys.stderr)
         state = {}
-    state.setdefault("deliveries", {})
     state.setdefault("evidence_offsets", {})
     return state
 
@@ -154,21 +147,21 @@ def main(sensor_map_path, now=None):
     send(emf({"GatewayUp": int(status is not None),
               "UncoveredReceptors": uncovered_count(status, serial_to_id.values())}, {}))
 
-    state = load_state()
-    detail = {}
-    if int(now // 60) % SLOW_EVERY_MIN == 0 or not state["deliveries"]:
+    worst_age, ages = location_age_seconds(read_journal(now), serial_to_id.values(), now)
+    send(emf({"LocationAgeMaxSeconds": round(worst_age)}, {sensor_id: {"location_age_s": round(age)}
+                                                           for sensor_id, age in ages.items()}))
+
+    if int(now // 60) % SLOW_EVERY_MIN == 0:
         try:
-            detail = slow_pass(serial_to_id, state, now)
+            state = load_state()
+            ship_listener_evidence(serial_to_id, state)
             save_state(state)
-        except Exception as error:  # the fast metrics are out; a stale state now pages on its own
-            print(f"slow pass failed: {error!r}", file=sys.stderr)
-    if GPSKEEPER:
-        send(emf({"DeliveriesFlatSeconds": round(deliveries_flat_seconds(state["deliveries"], GPSKEEPER, now))},
-                 detail))
+        except Exception as error:  # the metrics are out; the evidence waits for the next pass
+            print(f"evidence pass failed: {error!r}", file=sys.stderr)
     return 0
 
 
 if __name__ == "__main__":
-    if not HOST or "AEA_CW_GPSKEEPER" not in os.environ:
-        sys.exit("set AEA_CW_HOST and AEA_CW_GPSKEEPER (empty when the host has no GpsKeeper receptor)")
+    if not HOST:
+        sys.exit("set AEA_CW_HOST")
     sys.exit(main(sys.argv[1]))

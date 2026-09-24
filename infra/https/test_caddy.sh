@@ -79,9 +79,7 @@ grep -q "502\|dial tcp" "$WORK/caddy.log" || fail "no error log line to check (f
 echo "PASS the secret never reaches Caddy's log, even on a 502"
 
 kill "${pids[1]}"; wait "${pids[1]}" 2>/dev/null || true
-start_gateway
-start_caddy ""
-for header in "" "X-Origin-Verify: " "X-Origin-Verify: anything"; do
-  [[ $(code GET /status "$header") == 403 ]] || fail "empty secret must refuse everything (header: '$header')"
-done
-echo "PASS without the secret Caddy refuses everything"
+if AEA_ORIGIN_SECRET= "$CADDY" validate --config "$WORK/Caddyfile" --adapter caddyfile >/dev/null 2>&1; then
+  fail "Caddy accepts the config without the secret: it would only check that the header exists"
+fi
+echo "PASS without the secret Caddy refuses to start (fails closed)"

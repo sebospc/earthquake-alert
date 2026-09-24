@@ -239,8 +239,10 @@ assert verify.location_problems([reading("quibdo", 0, 3600, 4)], {"quibdo"}) == 
 assert verify.location_problems([reading("quibdo", 0, 3600.5, 4)], {"quibdo"}) != [], "ages are fractional seconds"
 assert verify.location_problems([reading("quibdo", 0, None, 4)], {"quibdo"}) == ["quibdo: GMS has no location"]
 assert verify.location_problems(healthy, {"quibdo", "chaparral"})[0].startswith("chaparral: GMS location 10.4 h (> 1 h)")
-blind = [reading("chaparral", 0, 20 * 3600 + 1, 2)]
-assert verify.location_problems(blind, set()) == ["chaparral: GMS location 20.0 h (> 20 h)"]
+# 20 h 15 min is a planned sensor-health reboot still finishing: not a problem. Past 21 h it did not help.
+assert verify.location_problems([reading("chaparral", 0, 20.25 * 3600, 2)], set()) == []
+blind = [reading("chaparral", 0, 21 * 3600 + 1, 2)]
+assert verify.location_problems(blind, set()) == ["chaparral: GMS location 21.0 h (> 21 h)"]
 assert verify.location_problems([], {"quibdo"}) == ["quibdo: no GMS location readings"]
 print("PASS location age in the verdict")
 
@@ -262,10 +264,10 @@ assert verify.alerting_location_age_s(QUIBDO_GMS + "      09-24 19:00:00.000: de
                                       "2026-09-24T19:26:15", 8900.0) == 3600 + 14 * 60 + 56, "a later earthquake_detection delivery is not AEA's"
 
 # The rule: > 20 h on any receptor, GpsKeeper or not. A flat counter alone is healthy (stationary).
-fresh_gps_old_aea = [{**reading("quibdo", 0, 40, 4), "alert_age_s": 20 * 3600 + 1}]
-assert verify.location_problems(fresh_gps_old_aea, {"quibdo"}) == ["quibdo: AEA's location 20.0 h old (> 20 h)"]
-assert verify.location_problems([{**reading("chaparral", 0, 3600, 2), "alert_age_s": 20 * 3600}], set()) == []
-assert verify.location_problems([{**reading("chaparral", 0, 3600, 2), "alert_age_s": 20 * 3600 + 0.5}], set()) != []
+fresh_gps_old_aea = [{**reading("quibdo", 0, 40, 4), "alert_age_s": 21 * 3600 + 1}]
+assert verify.location_problems(fresh_gps_old_aea, {"quibdo"}) == ["quibdo: AEA's location 21.0 h old (> 21 h)"]
+assert verify.location_problems([{**reading("chaparral", 0, 3600, 2), "alert_age_s": 21 * 3600}], set()) == []
+assert verify.location_problems([{**reading("chaparral", 0, 3600, 2), "alert_age_s": 21 * 3600 + 0.5}], set()) != []
 flat_for_a_day = [{**reading("quibdo", m, 40, 4), "alert_age_s": 600 + 60 * m} for m in range(0, 19 * 60, 30)]
 assert verify.location_problems(flat_for_a_day, {"quibdo"}) == [], "a stationary receptor never grows the counter"
 assert verify.location_problems([reading("quibdo", 0, 40, 4)], {"quibdo"}) == [], "old rows without alert_age_s"
