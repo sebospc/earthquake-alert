@@ -32,11 +32,14 @@ DOWN = "receptor down"
 CONTROL_CAPTURED = "the Mac captured and AWS did not"
 GOOGLE_SILENT = "Google did not alert (the Mac control did not either)"
 NO_CONTROL = "no control"
+CONTROL_RETIRED = "no control: the Mac control is retired"
 NEAR_THRESHOLD = "catalog magnitude near the threshold (Google estimates differently)"
 AT_EDGE = "at the edge of the radius"
 NOT_FELT = "not felt (DYFI < MMI 3)"
 UNEXPLAINED = "unexplained"
-FAILING_CAUSES = {DOWN, CONTROL_CAPTURED, UNEXPLAINED}
+PAIR_CAPTURED = "its paired canary captured and this one did not"
+PAIR_SILENT = "Google did not alert (its paired canary did not either)"
+FAILING_CAUSES = {DOWN, CONTROL_CAPTURED, PAIR_CAPTURED, UNEXPLAINED}
 
 
 def usgs_events(feed):
@@ -89,6 +92,12 @@ def miss_cause(event, receiver, km, radius, captured_by, covered, felt_mmi):
     if receiver["kind"] == "aws":
         if covered("aws", receiver["id"], event["time"]) is False:
             return DOWN
+        # Canary pairs (~30 km apart) control each other. The partner counts only if it was
+        # up and the quake was inside its own radius too.
+        partner = receiver.get("pair")
+        if partner and lab.km_between(partner["lat"], partner["lon"], event["lat"], event["lon"]) <= radius \
+                and covered("aws", partner["id"], event["time"]) is True:
+            return PAIR_CAPTURED if captured_by.get(("aws", partner["id"])) else PAIR_SILENT
         control = captured_by.get(("mac", receiver["id"]))
         if control is True:
             return CONTROL_CAPTURED
@@ -114,13 +123,16 @@ def classify(events, captures, receivers, covered, now, felt=lambda event, recei
     for event in events:
         radius = lab.beaware_radius_km(event["mag"])
         captured_by = {}
-        for receiver in receivers:
+        # A retired receiver ("until") neither certifies nor controls anything after that moment.
+        retired = {(r["kind"], r["id"]) for r in receivers if r.get("until", float("inf")) < event["time"]}
+        active = [r for r in receivers if (r["kind"], r["id"]) not in retired]
+        for receiver in active:
             key = (receiver["kind"], receiver["id"])
             hit = any(c["receiver"] == receiver["id"] and c["kind"] == receiver["kind"] and not c.get("update")
                       and matches(c, event, receiver) for c in captures)
             available = receiver["kind"] == "aws" or covered("mac", receiver["id"], event["time"]) is True
             captured_by[key] = hit if (hit or available) else None
-        for receiver in receivers:
+        for receiver in active:
             km = lab.km_between(receiver["lat"], receiver["lon"], event["lat"], event["lon"])
             expected = km <= radius
             hit = captured_by[(receiver["kind"], receiver["id"])] is True
@@ -140,9 +152,9 @@ def classify(events, captures, receivers, covered, now, felt=lambda event, recei
                                  "cause": "the late notice (eew_update) arrived but not the early alert"})
             elif expected:
                 cause = miss_cause(event, receiver, km, radius, captured_by, covered, felt(event, receiver))
-                if receiver["kind"] == "aws" and cause not in (DOWN, CONTROL_CAPTURED, GOOGLE_SILENT) \
+                if receiver["kind"] == "aws" and cause not in (DOWN, CONTROL_CAPTURED, GOOGLE_SILENT, PAIR_CAPTURED, PAIR_SILENT) \
                         and ("mac", receiver["id"]) not in captured_by:
-                    cause = f"{cause}; {NO_CONTROL}"
+                    cause = f"{cause}; {CONTROL_RETIRED if ('mac', receiver['id']) in retired else NO_CONTROL}"
                 findings.append({**base, "verdict": "MISS", "cause": cause})
             elif km <= lab.NEAR_MISS_KM or (radius and km <= NEAR_RADIUS_FACTOR * radius):
                 findings.append({**base, "verdict": "NEAR", "cause": None})
@@ -155,6 +167,27 @@ def classify(events, captures, receivers, covered, now, felt=lambda event, recei
         verdict = "FALSE" if now - capture["captured"] >= FALSE_AFTER_S else "PENDING"
         unexplained.append({**capture, "verdict": verdict})
     return findings, unexplained
+
+
+# Without a control, "near threshold" or "at the edge" can hide a real failure once, not every week.
+REPEATED_EXPLAINED_MISSES = 3
+REPEATED_WINDOW_S = 7 * 86400
+
+
+def repeated_explained_misses(findings, end):
+    """DEGRADED reasons when an AWS receptor piles up explained misses with no control and no hit in between.
+
+    findings: every finding up to `end`, not only the day's: the window is 7 days.
+    """
+    streak = {}
+    for f in sorted((f for f in findings if f["kind"] == "aws" and end - REPEATED_WINDOW_S <= f["time"] < end),
+                    key=lambda f: f["time"]):
+        if f["verdict"] == "HIT":
+            streak[f["receiver"]] = 0
+        elif f["verdict"] == "MISS" and CONTROL_RETIRED in f["cause"] and not fails(f):
+            streak[f["receiver"]] = streak.get(f["receiver"], 0) + 1
+    return [f"{receiver}: no control, repeated explained misses ({count} in 7 days, no hit in between)"
+            for receiver, count in sorted(streak.items()) if count >= REPEATED_EXPLAINED_MISSES]
 
 
 def fails(finding):
@@ -172,7 +205,7 @@ def percentile(values, fraction):
     return ordered[min(len(ordered) - 1, int(len(ordered) * fraction))]
 
 
-def verdict(findings, unexplained, coverage, probes, alert_delays_s, monitor_completeness, location=(), our_parts=()):
+def verdict(findings, unexplained, coverage, probes, alert_delays_s, monitor_completeness, extra=(), our_parts=()):
     """The day's verdict and every rule that fired.
 
     coverage: {receiver: {"uncovered_min": n, "longest_gap_min": n}} for public receivers.
@@ -196,7 +229,7 @@ def verdict(findings, unexplained, coverage, probes, alert_delays_s, monitor_com
         if p95 is not None and p95 > 10:
             degradations.append(f"probe p95 {p95:.1f} s (> 10 s)")
     degradations += [f"real alert delivered {d:.1f} s after capture (> 10 s)" for d in alert_delays_s if d > 10]
-    degradations += list(location)
+    degradations += list(extra)
     for event_id, seconds in our_parts:
         if seconds is None:
             degradations.append(f"real alert {event_id} never reached the monitor")
@@ -217,6 +250,20 @@ RESTART_BLIND_S = 15 * 60
 # The bootstrap writes DEPLOY seconds before it restarts the gateway. Anything looser lets a
 # deploy excuse a later, unplanned restart (seen on 24-sep: DEPLOY 16:17, manual restart 16:22).
 DEPLOY_BEFORE_START_S = 120
+
+
+# infra/deploy/remote.sh waits up to 7 min for coverage, then rolls back with its own DEPLOY line.
+ROLLBACK_AFTER_S = 15 * 60
+
+
+def planned_deploys(evidence):
+    """Times of the DEPLOY lines that excuse their restart. A deploy that rolled back left users
+    without alerts for minutes: neither it nor its rollback is excused."""
+    deploys = sorted((datetime.fromisoformat(r["at"].replace("Z", "+00:00")).timestamp(), r.get("by"))
+                     for r in evidence if r.get("type") == "DEPLOY")
+    rollbacks = [t for t, by in deploys if by == "ci-rollback"]
+    return [t for t, by in deploys
+            if by != "ci-rollback" and not any(0 < r - t <= ROLLBACK_AFTER_S for r in rollbacks)]
 
 
 def restart_windows(health, deploys, sensor_ids=None):
@@ -337,6 +384,42 @@ def alerting_deliveries(dumpsys_gms):
     return None if match is None else int(match.group(1))
 
 
+# GMS's event log line when it hands AEA a location. AEA's request has minUpdateDistance=1000 m, so a
+# stationary receptor only gets one at boot and when moved: this, not the GPS provider, is AEA's copy.
+ALERTING_DELIVERY = re.compile(r"(\d\d-\d\d \d\d:\d\d:\d\d)\.\d+: delivered locations\[\d+\] to [^\n]*\[earthquake_alerting\]")
+
+
+def alerting_location_age_s(dumpsys_gms, guest_now, uptime_s):
+    """Seconds since GMS last delivered a location to earthquake_alerting, on the guest's own clock
+    (guest_now: "YYYY-MM-DDTHH:MM:SS" from the guest). If the line has rolled out of the event log,
+    the uptime is the upper bound: pessimistic, so loud."""
+    found = last_alerting_delivery_age_s(dumpsys_gms, guest_now)
+    return uptime_s if found is None else found
+
+
+def last_alerting_delivery_age_s(dumpsys_gms, guest_now):
+    """Age of the newest earthquake_alerting delivery still in GMS's event log, or None."""
+    deliveries = ALERTING_DELIVERY.findall(dumpsys_gms or "")
+    if not deliveries or not guest_now:
+        return None
+    now = datetime.fromisoformat(guest_now)
+    last = datetime.strptime(f"{now.year}-{deliveries[-1]}", "%Y-%m-%d %H:%M:%S")
+    if last > now:  # the log has no year: a December delivery read in January
+        last = last.replace(year=now.year - 1)
+    return (now - last).total_seconds()
+
+
+def remembered_alert_age_s(found_age_s, previous_delivery_at, now, uptime_s):
+    """GpsKeeper floods GMS's event log (~160 lines/h), so AEA's delivery line can roll out while
+    AEA's copy is still recent. The poll runs every 30 min and remembers the last delivery it saw;
+    that memory holds only within the same boot (its age must be under the uptime)."""
+    if found_age_s is not None:
+        return found_age_s
+    if previous_delivery_at is not None and uptime_s is not None and now - previous_delivery_at < uptime_s:
+        return now - previous_delivery_at
+    return uptime_s
+
+
 def control_fresh(readings, device, t):
     """True/False from the control reading nearest to t; None if there is none close enough."""
     near = [r for r in readings if r["device"] == device and abs(r["at"] - t) <= CONTROL_READING_VALID_S]
@@ -348,16 +431,15 @@ def control_fresh(readings, device, t):
     return reading["age_s"] - (reading["at"] - t) <= CONTROL_MAX_LOCATION_AGE_S
 
 
-# With GpsKeeper the fix is refreshed every minute and GMS takes it about every 30 min.
+# With GpsKeeper the GPS fix is refreshed every minute.
 KEEPER_MAX_LOCATION_AGE_S = 3600
-KEEPER_MAX_STALL_S = 2 * 3600
 
 
 def location_problems(readings, keeper_sensors):
     """DEGRADED reasons from the AWS location readings of one day (QA-84).
 
-    A receptor with GpsKeeper must keep its fix under an hour old and keep feeding it to
-    earthquake_alerting. One without it only has to stay under the ~24 h blind limit.
+    A receptor with GpsKeeper must keep its GPS fix under an hour old. On every receptor, the
+    location AEA itself last got (alert_age_s) must stay under the ~24 h blind limit (QA-84, QA-90).
     """
     problems = []
     by_sensor = {}
@@ -374,27 +456,11 @@ def location_problems(readings, keeper_sensors):
         elif max(r["age_s"] for r in mine) > limit:
             problems.append(f"{sensor}: GMS location {max(r['age_s'] for r in mine) / 3600:.1f} h "
                             f"(> {limit / 3600:.0f} h)")
-        if sensor in keeper_sensors and deliveries_stall_s(mine) > KEEPER_MAX_STALL_S:
-            problems.append(f"{sensor}: earthquake_alerting deliveries flat for "
-                            f"{deliveries_stall_s(mine) / 3600:.1f} h (> 2 h)")
+        alert_ages = [r["alert_age_s"] for r in mine if r.get("alert_age_s") is not None]
+        if alert_ages and max(alert_ages) > CONTROL_MAX_LOCATION_AGE_S:
+            problems.append(f"{sensor}: AEA's location {max(alert_ages) / 3600:.1f} h old "
+                            f"(> {CONTROL_MAX_LOCATION_AGE_S / 3600:.0f} h)")
     return problems
-
-
-def deliveries_stall_s(readings):
-    """Longest time the delivery count stood still. A reboot resets the count, and the clock.
-
-    ponytail: a stall that crosses midnight is counted from the day's first reading.
-    """
-    longest, since, previous = 0, None, None
-    for reading in readings:
-        rebooted = previous is not None and reading["uptime_s"] is not None and previous["uptime_s"] is not None \
-            and reading["uptime_s"] < previous["uptime_s"]
-        grew = previous is not None and (reading["deliveries"] or 0) > (previous["deliveries"] or 0)
-        if since is None or rebooted or grew:
-            since = reading["at"]
-        longest = max(longest, reading["at"] - since)
-        previous = reading
-    return longest
 
 
 # Our part of a real alert: listener capture to push received by the monitor (QA-86).
@@ -440,6 +506,47 @@ def usgs_origin(origin, catalog):
     SGC only gives whole seconds, and USGS misses most quakes under M4.5."""
     near = [e for e in catalog if e["source"] == "usgs" and abs(e["time"] - origin) <= MATCH_WINDOW_S]
     return min(near, key=lambda e: abs(e["time"] - origin))["time"] if near else None
+
+
+# Live, every health poll: the daily certificate alone let quibdo sit uncovered for 2 h (24-sep 21:15).
+LIVE_DEGRADED_MIN = 15
+LIVE_FAIL_MIN = 60
+
+
+def uncovered_since(health, sensor_id):
+    """Start of the receptor's current run of uncovered polls, or None if it is covered now.
+    Polls the monitor itself could not make (ssh, aws-cli) neither break nor extend the run."""
+    start = None
+    for record in reversed(health):
+        sensor = (record.get("sensors") or {}).get(sensor_id)
+        if record.get("error") in ("gateway", "spot") or (sensor is not None and not sensor.get("covered")):
+            start = record["at"]
+        elif sensor is not None:
+            break
+    return start
+
+
+def live_coverage_notices(health, sensor_ids, open_runs):
+    """(notices, open_runs). open_runs {sensor: {"since": t, "level": 0|15|60}} is the caller's memory
+    between polls, so each threshold is told once per outage and the recovery once."""
+    notices, now_open = [], {}
+    last_at = health[-1]["at"] if health else None
+    for sensor_id in sensor_ids:
+        since = uncovered_since(health, sensor_id)
+        known = open_runs.get(sensor_id)
+        if since is None:
+            if known and known["level"]:
+                notices.append(f"RESTORED {sensor_id}: covered again after {(last_at - known['since']) / 60:.0f} min")
+            continue
+        run = {"since": since, "level": known["level"] if known and known["since"] == since else 0}
+        minutes = (last_at - since) / 60
+        for level, verdict in ((LIVE_DEGRADED_MIN, "DEGRADED"), (LIVE_FAIL_MIN, "FAIL")):
+            if minutes >= level > run["level"]:
+                notices.append(f"{verdict} {sensor_id}: uncovered for {minutes:.0f} min (since "
+                               f"{datetime.fromtimestamp(since, timezone.utc):%H:%M} UTC)")
+                run["level"] = level
+        now_open[sensor_id] = run
+    return notices, now_open
 
 
 def summarize_latencies(values):

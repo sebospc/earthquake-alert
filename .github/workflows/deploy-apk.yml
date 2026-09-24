@@ -1,0 +1,92 @@
+name: deploy-apk
+
+# One receptor per run, by hand, after approval of `production`. Deploy one, check it, then
+# the next. Held until the repo variable APK_DEPLOY_ENABLED is "true".
+#
+# First run with the CI key (key_switch): the receptors still carry the Mac debug key, so
+# install -r fails on the signature. remote.sh then backs up the on-device evidence, uninstalls,
+# installs with -g, rewrites relay.json from the sensor map, re-allows the notification
+# listener, and verifies GpsKeeper running, no reboot, a fresh canary OK and the receptor
+# covered. Every later run: key_switch off, plain install -r.
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Commit on main whose CI run built the APK
+        required: true
+      sensor_id:
+        description: One receptor, e.g. quibdo
+        required: true
+      key_switch:
+        description: One-time switch from the Mac debug key (uninstall + install)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    environment: production
+    permissions:
+      id-token: write
+      actions: read
+      contents: read
+    steps:
+      - name: hold
+        if: vars.APK_DEPLOY_ENABLED != 'true'
+        run: |
+          echo "::error::APK deploy is on hold (APK_DEPLOY_ENABLED is not true)"
+          exit 1
+      - name: validate inputs
+        env:
+          COMMIT: ${{ inputs.commit }}
+          SENSOR_ID: ${{ inputs.sensor_id }}
+        run: |
+          [[ $COMMIT =~ ^[0-9a-f]{40}$ ]] || { echo "::error::commit must be a full sha"; exit 1; }
+          [[ $SENSOR_ID =~ ^[a-z0-9-]+$ ]] || { echo "::error::bad sensor_id"; exit 1; }
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit }}
+      - name: find the green CI run of that commit on main
+        id: ci
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_id=$(gh run list -R "$GITHUB_REPOSITORY" --workflow ci.yml --branch main --commit "${{ inputs.commit }}" \
+            --status success --limit 1 --json databaseId -q '.[0].databaseId')
+          [[ -n $run_id ]] || { echo "::error::no green CI run on main for ${{ inputs.commit }}"; exit 1; }
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        with:
+          name: listener-apk-${{ inputs.commit }}
+          path: apk
+          run-id: ${{ steps.ci.outputs.run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: gateway-${{ inputs.commit }}
+          path: build
+          run-id: ${{ steps.ci.outputs.run_id }}
+          github-token: ${{ github.token }}
+      # Only the files this step needs, with the checksums CI wrote, not new ones.
+      - name: bundle
+        run: |
+          mkdir dist
+          cp apk/listener.apk build/tools.tar.gz build/tools.manifest dist/
+          { grep ' tools.tar.gz$' build/SHA256SUMS; cat apk/listener.apk.sha256; } > dist/SHA256SUMS
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: sa-east-1
+      - env:
+          SENSOR_ID: ${{ inputs.sensor_id }}
+          KEY_SWITCH: ${{ inputs.key_switch && '--key-switch' || '' }}
+        run: |
+          bash infra/deploy/ssm-run.sh "${{ vars.RECEPTOR_INSTANCE_ID }}" "${{ vars.DEPLOY_BUCKET }}" \
+            "${{ inputs.commit }}" dist "apk BUNDLE $SENSOR_ID $KEY_SWITCH"

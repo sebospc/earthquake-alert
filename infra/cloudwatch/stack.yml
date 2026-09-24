@@ -1,0 +1,35 @@
+# Shared by every receptor host: log groups with retention and the alert topic.
+# The alarms are per host, in host-alarms.yml.
+# Deploy (the email stays out of the repo, the tag reaches every resource):
+#   aws cloudformation deploy --region sa-east-1 --stack-name aea-lab-cloudwatch \
+#     --template-file infra/cloudwatch/stack.yml --parameter-overrides AlertEmail=<email> \
+#     --tags project=aea-lab
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  AlertEmail:
+    Type: String
+Resources:
+  GatewayEvidenceLogs:
+    Type: AWS::Logs::LogGroup
+    Properties: { LogGroupName: /aea-lab/gateway-evidence, RetentionInDays: 90 }
+  ListenerEvidenceLogs:
+    Type: AWS::Logs::LogGroup
+    Properties: { LogGroupName: /aea-lab/listener-evidence, RetentionInDays: 90 }
+  JournalLogs:
+    Type: AWS::Logs::LogGroup
+    Properties: { LogGroupName: /aea-lab/journal, RetentionInDays: 30 }
+  MetricLogs:
+    Type: AWS::Logs::LogGroup
+    Properties: { LogGroupName: /aea-lab/metrics, RetentionInDays: 30 }
+
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties: { TopicName: aea-lab-alarms }
+  AlertEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties: { TopicArn: !Ref AlertTopic, Protocol: email, Endpoint: !Ref AlertEmail }
+
+Outputs:
+  AlertTopicArn:
+    Value: !Ref AlertTopic
+    Export: { Name: aea-lab-alert-topic }

@@ -14,6 +14,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -39,6 +40,9 @@ LOCAL_PORT = int(os.environ.get("MONITOR_LOCAL_PORT", "18787"))
 GATEWAY = f"http://127.0.0.1:{LOCAL_PORT}"
 NTFY_TOPIC = os.environ.get("MONITOR_NTFY_TOPIC")
 # The Mac control fleet: lab.py runs from here, live. Read-only.
+# The user retired the Mac control fleet (launchd job removed, emulators off). After this the
+# SGC and USGS catalogs are the only ground truth, and the Mac is "retired", never "down".
+MAC_RETIRED_AT = datetime.fromisoformat(os.environ.get("MONITOR_MAC_RETIRED_AT", "2026-09-24T19:11:00+00:00")).timestamp()
 LAB_DIR = os.environ.get("MONITOR_LAB_DIR", os.path.expanduser("~/Library/Application Support/aea-lab/evidence"))
 
 HEALTH_EVERY_S = 60
@@ -85,8 +89,15 @@ def load_state():
 
 
 def notify(message):
-    """Operator alert. Only for FAIL: it has to stay rare enough to be read."""
+    """Operator alert: FAIL, and live coverage runs of 15 min or more. Local first (a macOS
+    notification and data/live-alerts.jsonl, nothing leaves the machine); ntfy only if configured."""
     print(f"NOTIFY: {message}")
+    append("live-alerts.jsonl", {"at": now(), "message": message})
+    try:
+        subprocess.run(["osascript", "-e", f"display notification {json.dumps(message)} with title \"Earthquake certifier\""],
+                       capture_output=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        pass  # the log line and live-alerts.jsonl above already hold it
     if not NTFY_TOPIC:
         return
     try:
@@ -334,10 +345,14 @@ def receivers(sensors, health):
     result = [{"id": s["id"], "lat": s["lat"], "lon": s["lon"], "kind": "aws",
                # Before the monitor first saw it covered, there is nothing to certify.
                "since": first_seen.get(s["id"], float("inf"))} for s in sensors]
+    by_id = {r["id"]: r for r in result}
+    for a, b in CANARY_PAIRS:
+        if a in by_id and b in by_id:
+            by_id[a]["pair"], by_id[b]["pair"] = by_id[b], by_id[a]
     lab_state = lab.load(os.path.join(LAB_DIR, "lab-state.json"), {"devices": {}})
     for _, name, lat, lon in lab.FLEET:
         since = (lab_state["devices"].get(name) or {}).get("online_since")
-        result.append({"id": name, "lat": lat, "lon": lon, "kind": "mac",
+        result.append({"id": name, "lat": lat, "lon": lon, "kind": "mac", "until": MAC_RETIRED_AT,
                        "since": datetime.fromisoformat(since).timestamp() if since else float("inf")})
     return result
 
@@ -403,6 +418,8 @@ def interventions():
 
 def poll_control():
     """QA-85: how old the Mac control's GMS location is. adb read-only: uptime and dumpsys."""
+    if now() >= MAC_RETIRED_AT:
+        return
     for port, name, _, _ in lab.FLEET:
         serial = f"emulator-{port}"
         uptime = lab.adb(serial, "shell", "cat", "/proc/uptime", timeout=20)
@@ -418,13 +435,16 @@ def poll_control():
 AWS_SERIALS = dict(item.split(":") for item in os.environ.get(
     "MONITOR_AWS_SERIALS", "emulator-5554:chaparral,emulator-5556:quibdo").split(","))
 # Receptors running GpsKeeperService: held to the 1 h / 2 h rule instead of the ~24 h one.
+# Canary pairs that control each other, "a:b,c:d" (docs/siting-canaries.md). Empty until provisioned.
+CANARY_PAIRS = [pair.split(":") for pair in os.environ.get("MONITOR_CANARY_PAIRS", "").split(",") if pair]
 GPSKEEPER = set(filter(None, os.environ.get("MONITOR_GPSKEEPER", "quibdo").split(",")))
 # Read-only: uptime, the GPS line of dumpsys location, and earthquake_alerting's total.
 REMOTE_LOCATION_SCRIPT = """A="sudo -u aea -H /opt/android-sdk/platform-tools/adb"
 for s in {serials}; do
   echo "== $s"; $A -s $s shell cat /proc/uptime
   $A -s $s shell dumpsys location | grep -m1 "last location=Location\\[gps"
-  $A -s $s shell dumpsys activity service com.google.android.gms | grep -m1 "earthquake_alerting\\]: total"
+  $A -s $s shell dumpsys activity service com.google.android.gms | grep -E "earthquake_alerting\\]: total|delivered locations.*\\[earthquake_alerting\\]"
+  echo "guest_now $($A -s $s shell date +%Y-%m-%dT%H:%M:%S | tr -d '\\r')"
   echo "clock $(date +%s.%N) $($A -s $s shell date +%s.%N | tr -d '\\r') $(date +%s.%N)"
 done"""
 
@@ -439,6 +459,7 @@ def poll_aws_location():
                           "-o", f"UserKnownHostsFile={path('known_hosts')}", f"ubuntu@{ip}",
                           REMOTE_LOCATION_SCRIPT.format(serials=" ".join(AWS_SERIALS))],
                          capture_output=True, text=True, timeout=180).stdout
+    history = read_jsonl(path("aws-location.jsonl"))
     for chunk in out.split("== ")[1:]:
         serial, _, rest = chunk.partition("\n")
         lines = rest.splitlines()
@@ -446,11 +467,22 @@ def poll_aws_location():
             uptime = float(lines[0].split()[0])
         except (IndexError, ValueError):
             uptime = None
+        sensor = AWS_SERIALS.get(serial.strip(), serial.strip())
+        previous = next((r.get("alert_delivery_at") for r in reversed(history) if r["sensor"] == sensor
+                         and r.get("alert_delivery_at") is not None), None)
+        age = verify.remembered_alert_age_s(verify.last_alerting_delivery_age_s(rest, guest_now(rest)),
+                                            previous, now(), uptime)
         append("aws-location.jsonl", {
             "at": now(), "sensor": AWS_SERIALS.get(serial.strip(), serial.strip()),
             "age_s": verify.location_age_s(rest, uptime) if uptime is not None else None,
             "deliveries": verify.alerting_deliveries(rest), "uptime_s": uptime,
-            "skew_s": verify.emulator_skew_s(rest)})
+            "skew_s": verify.emulator_skew_s(rest),
+            "alert_age_s": age, "alert_delivery_at": None if age is None else now() - age})
+
+
+def guest_now(text):
+    match = re.search(r"guest_now (\S+)", text)
+    return match.group(1) if match else None
 
 
 def poll_mac_clock():
@@ -461,8 +493,7 @@ def poll_mac_clock():
 
 def deploy_times():
     """DEPLOY records the bootstrap writes to the evidence right before it restarts the gateway."""
-    return [datetime.fromisoformat(r["at"].replace("Z", "+00:00")).timestamp()
-            for r in read_jsonl(path("evidence.jsonl")) if r.get("type") == "DEPLOY"]
+    return verify.planned_deploys(read_jsonl(path("evidence.jsonl")))
 
 
 def certificate(day, state, sensors):
@@ -488,6 +519,7 @@ def certificate(day, state, sensors):
     # A probe is expected once per monitor subscription; "received" counts probes that arrived at all.
     probes = {"sent": len(sent), "received": len(latencies), "latencies_s": latencies}
     findings, unexplained = classify_all(state, sensors)
+    repeated = verify.repeated_explained_misses(findings, end)
     findings = [f for f in findings if start <= f["time"] < end]
     unexplained = [c for c in unexplained if start <= c["captured"] < end]
     alerts = [c for c in aws_captures() if start <= c["captured"] < end]
@@ -501,7 +533,7 @@ def certificate(day, state, sensors):
         c["usgs_origin"] = verify.usgs_origin(c["origin"], list(state["catalog"].values()))
     location = [r for r in read_jsonl(path("aws-location.jsonl")) if start <= r["at"] < end]
     decision, reasons = verify.verdict(findings, unexplained, coverage, probes, delays,
-                                       min(1.0, completeness), verify.location_problems(location, GPSKEEPER),
+                                       min(1.0, completeness), verify.location_problems(location, GPSKEEPER) + repeated,
                                        [(c["event_id"], c["our_part"]) for c in alerts])
     return render(day, decision, reasons, coverage, probes, findings, unexplained, alerts, completeness, horizon < end,
                   restarts, manual)
@@ -515,8 +547,9 @@ def render(day, decision, reasons, coverage, probes, findings, unexplained, aler
     lines += ["", "Rules: FAIL = MISS with the receptor down, unexplained, or with the Mac capturing while AWS was covered; "
               "FALSE confirmed (24 h); a receptor uncovered > 60 min in a row. DEGRADED = > 15 min uncovered "
               "in the day; probes lost > 5 % or p95 > 10 s; real alert delivered > 10 s after capture; "
-              "the monitor saw < 90 % of the minutes; GMS location > 1 h or earthquake_alerting deliveries "
-              "flat > 2 h on a receptor with GpsKeeper, > 20 h or null on one without it. MISSes explained by Google do not lower the verdict.",
+              "the monitor saw < 90 % of the minutes; GMS GPS location > 1 h on a receptor with GpsKeeper, "
+              "> 20 h or null on one without it; AEA's own location (last delivery to earthquake_alerting) > 20 h "
+              "on any receptor. With the Mac control retired, 3 explained misses on one receptor in 7 days with no hit in between. MISSes explained by Google do not lower the verdict.",
               "", f"Minutes observed by the monitor: {completeness:.0%}.", "", "## Coverage per receptor", "",
               "| receptor | min uncovered | longest gap | min in deploy or intervention (not counted) | gaps |",
               "|---|---|---|---|---|"]
@@ -590,16 +623,20 @@ def aws_location_section(day):
     lines = ["", "## GMS location on the AWS receptors (QA-84)", ""]
     if not rows:
         return lines + ["No readings."]
-    lines += ["| receptor | readings | max age | last age | earthquake_alerting deliveries (first → last) |",
-              "|---|---|---|---|---|"]
+    lines += ["| receptor | readings | GPS max age | GPS last age | AEA location max age "
+              "| earthquake_alerting deliveries (first → last) |", "|---|---|---|---|---|---|"]
     for sensor in sorted({r["sensor"] for r in rows}):
         mine = [r for r in rows if r["sensor"] == sensor]
         ages = [r["age_s"] for r in mine if r["age_s"] is not None]
         worst = f"{max(ages) / 3600:.1f} h" if ages else "no location"
         last = "no location" if mine[-1]["age_s"] is None else f"{mine[-1]['age_s'] / 60:.1f} min"
-        lines.append(f"| {sensor} | {len(mine)} | {worst} | {last} | {mine[0]['deliveries']} → {mine[-1]['deliveries']} |")
-    return lines + ["", "With GpsKeeper the age has to stay in seconds and the deliveries have to grow "
-                    "(~1 every 30 min). Without it, the location ages until the next boot."]
+        alert_ages = [r["alert_age_s"] for r in mine if r.get("alert_age_s") is not None]
+        aea = f"{max(alert_ages) / 3600:.1f} h" if alert_ages else "not measured"
+        lines.append(f"| {sensor} | {len(mine)} | {worst} | {last} | {aea} "
+                     f"| {mine[0]['deliveries']} → {mine[-1]['deliveries']} |")
+    return lines + ["", "AEA asks GMS for a location only on a move of 1 km or more (minUpdateDistance=1000), so "
+                    "the deliveries do not grow on a stationary receptor and AEA's copy ages from its last one "
+                    "(boot, a move, or a nudge), even with GpsKeeper keeping the GPS fresh (QA-90)."]
 
 
 def write_certificate(day, state, sensors):
@@ -626,6 +663,11 @@ def step(state, force=False):
         return
     sensors = public_sensors()
     sensor_ids = [s["id"] for s in sensors]
+    # ponytail: rereads health.jsonl every minute (~1.4k lines/day); keep the tail if it grows slow.
+    notices, state["uncovered"] = verify.live_coverage_notices(
+        read_jsonl(path("health.jsonl"))[-24 * 60:], sensor_ids, state.get("uncovered", {}))
+    for notice in notices:
+        notify(notice)
     try:
         ensure_receiver_running(sensor_ids)
     except Exception as error:

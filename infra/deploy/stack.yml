@@ -1,0 +1,106 @@
+# Everything the deploy pipeline needs on the AWS side, deployed once by hand with admin
+# rights (the pipeline never changes its own permissions):
+#   aws cloudformation deploy --region sa-east-1 --stack-name aea-lab-deploy \
+#     --template-file infra/deploy/stack.yml --capabilities CAPABILITY_NAMED_IAM \
+#     --parameter-overrides CreateOidcProvider=true --tags project=aea-lab
+# Then attach the instance profile to each receptor host (EC2 > Modify IAM role).
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  CreateOidcProvider:
+    Type: String
+    AllowedValues: ["true", "false"]
+    Description: false if the account already has token.actions.githubusercontent.com
+  GitHubRepo:
+    Type: String
+    Default: sebospc/earthquake-alert
+Conditions:
+  NewOidcProvider: !Equals [!Ref CreateOidcProvider, "true"]
+Resources:
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: NewOidcProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+
+  # Build artifacts on their way to the host. The host fetches them over short presigned URLs,
+  # so it needs no S3 permission of its own.
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub aea-lab-deploy-${AWS::AccountId}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration: [{ ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 } }]
+      LifecycleConfiguration:
+        Rules: [{ Id: expire, Status: Enabled, ExpirationInDays: 30 }]
+
+  # Only this repo, only main, only the protected `production` environment. The default OIDC
+  # subject of an environment job has no ref, so the repo's template must add it:
+  #   echo '{"use_default":false,"include_claim_keys":["repo","context","ref"]}' |
+  #     gh api -X PUT repos/sebospc/earthquake-alert/actions/oidc/customization/sub --input -
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: aea-lab-github-deploy
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubRepo}:environment:production:ref:refs/heads/main
+      Policies:
+        - PolicyName: deploy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [s3:PutObject, s3:GetObject]
+                Resource: !Sub ${ArtifactBucket.Arn}/*
+              - Effect: Allow
+                Action: ssm:SendCommand
+                Resource: !Sub arn:aws:ssm:${AWS::Region}::document/AWS-RunShellScript
+              - Effect: Allow
+                Action: ssm:SendCommand
+                Resource: !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/*
+                Condition:
+                  StringEquals: { aws:ResourceTag/project: aea-lab }
+              - Effect: Allow
+                Action: [ssm:GetCommandInvocation, ssm:ListCommandInvocations]
+                Resource: "*"
+
+  # On the receptor host: SSM Run Command and the CloudWatch agent. Nothing else.
+  ReceptorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: aea-lab-receptor
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+  ReceptorInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: aea-lab-receptor
+      Roles: [!Ref ReceptorRole]
+
+Outputs:
+  DeployRoleArn:
+    Value: !GetAtt DeployRole.Arn
+  ArtifactBucketName:
+    Value: !Ref ArtifactBucket

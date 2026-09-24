@@ -303,6 +303,21 @@ test("QA-03 an APNs attempt that drops is retried by the gateway itself", async 
   assert.equal((await sensorStatus(port, "chaparral")).degraded_since, null);
 });
 
+test("latency stamps: an APNs push is stamped when it leaves, not when APNs answers", async t => {
+  const apns = await startApns(t, stream => setTimeout(() => { stream.respond({ ":status": 200 }); stream.end(); }, 150));
+  const { config, port } = await startGateway(t, { apnsHost: apns.url });
+  await register(port, PHONE, ["chaparral"]);
+
+  await sendEvent(port, alertFrom("chaparral"));
+  await wait(400);
+
+  const records = (await readFile(config.evidenceFile, "utf8")).trim().split("\n").map(line => JSON.parse(line));
+  const dispatch = records.find(record => record.apns?.length);
+  const [result] = dispatch.apns;
+  assert.ok(Date.parse(dispatch.accepted_at) <= Date.parse(result.sent_at), JSON.stringify(dispatch));
+  assert.ok(Date.parse(result.delivered_at) - Date.parse(result.sent_at) >= 140, JSON.stringify(result));
+});
+
 test("QA-04 a failed evidence write does not push twice when the sensor retries", async t => {
   const apns = await startApns(t);
   const { port } = await startGateway(t, {
@@ -553,6 +568,26 @@ test("QA-69 /devices and /subscribe have separate limits per IP", async t => {
   assert.equal(deviceStatuses[120], 429, "POST and DELETE /devices share 120");
   assert.deepEqual(subscribeStatuses.slice(0, 30), Array(30).fill(201), "/devices used up /subscribe's room");
   assert.equal(subscribeStatuses[30], 429);
+});
+
+// Behind CloudFront + Caddy (infra/https): CloudFront appends the viewer's IP to whatever the
+// viewer sent, and Caddy passes the header through. Only the last entry can be trusted.
+test("the rate limit keys on CloudFront's last X-Forwarded-For entry, not on what the viewer wrote", async t => {
+  const { port } = await startGateway(t, {
+    apnsHost: "http://127.0.0.1:1",
+    vapid: { subject: "mailto:qa@example.com", publicKey: "public", privateKey: "private" }
+  });
+  const subscribe = (i, forwardedFor) => request(port, "POST", "/subscribe", JSON.stringify({ sensor_id: "chaparral",
+    subscription: { endpoint: `https://fcm.googleapis.com/fcm/send/xff-${i}`, keys: {
+      p256dh: Buffer.alloc(65, 4).toString("base64url"), auth: Buffer.alloc(16, 1).toString("base64url") } } }),
+    { "x-forwarded-for": forwardedFor });
+  const statuses = [];
+  // One viewer rotating a spoofed first entry on every request.
+  for (let i = 0; i < 31; i += 1) statuses.push((await subscribe(i, `10.9.${i}.1, 203.0.113.7`)).status);
+
+  assert.deepEqual(statuses.slice(0, 30), Array(30).fill(201));
+  assert.equal(statuses[30], 429, "a spoofed first entry escaped the limit");
+  assert.equal((await subscribe(99, "10.9.0.1, 198.51.100.9")).status, 201, "another viewer was limited too");
 });
 
 test("QA-76 /devices refuses a sensor that is not public, fail closed", async t => {

@@ -10,7 +10,7 @@ alert at +18.1 s, ~0.8 s added by us (see `docs/qa/load.md`).
 
 1. `docs/STATUS.md`: current state, what is running, open items. Always first.
 2. `docs/roles/<your-name>.md`: if your session name is developer, developer-qa,
-   developer-ios or comunicacion-humano. It says what you own and your rules.
+   developer-ios or devops-earthquake. It says what you own and your rules.
 3. Only what the task needs:
 
 | topic | file |
@@ -22,7 +22,7 @@ alert at +18.1 s, ~0.8 s added by us (see `docs/qa/load.md`).
 | load test numbers | `docs/qa/load.md` |
 | certifier | `monitor/README.md` |
 | pilot receptor sites | `docs/siting-pilot.md` |
-| emails drafted, not sent | `docs/outreach/` |
+| emails drafted, dropped by the user (never sent, not to be sent) | `docs/outreach/` |
 
 ## Token rules
 
@@ -34,8 +34,8 @@ alert at +18.1 s, ~0.8 s added by us (see `docs/qa/load.md`).
 ## Hard rules
 
 - Do not touch the live Mac fleet (emulator-5554..5560, `~/Library/Application Support/aea-lab/`)
-  or the AWS EC2 unless your role says so. The coordinator deploys.
+  or the AWS EC2 unless your role says so. The coordinator approves every deploy; devops-earthquake runs the pipeline.
 - Nothing leaves the machine (email, Slack, GitHub, posts) without the user's approval.
-- Git repo (local, no remote yet). Only the coordinator commits; never push without the user's approval. Secrets and live config stay out: see `.gitignore`.
+- Git repo, remote `origin` = github.com/sebospc/earthquake-alert (PUBLIC: anything committed is published). Only the coordinator commits; never push without the user's approval. Secrets and live config stay out: see `.gitignore`.
 - Code style and writing style: `~/.claude/CLAUDE.md`.
 - Life-safety system: a silent failure is worse than a loud one. Every change keeps a test.

@@ -244,18 +244,39 @@ assert verify.location_problems(blind, set()) == ["chaparral: GMS location 20.0 
 assert verify.location_problems([], {"quibdo"}) == ["quibdo: no GMS location readings"]
 print("PASS location age in the verdict")
 
-stalled = [reading("quibdo", m, 40, 4) for m in range(0, 121, 30)]
-assert verify.location_problems(stalled, {"quibdo"}) == []
-stalled.append(reading("quibdo", 121, 40, 4))
-assert verify.location_problems(stalled, {"quibdo"}) == ["quibdo: earthquake_alerting deliveries flat for 2.0 h (> 2 h)"]
-assert verify.location_problems(stalled, set()) == [], "without GpsKeeper deliveries are not expected to grow"
-# One growth in the middle restarts the clock; so does a reboot that resets the count to 0.
-grows = [reading("quibdo", m, 40, 4 + (m >= 90)) for m in range(0, 181, 30)]
-assert verify.location_problems(grows, {"quibdo"}) == []
-rebooted = [reading("quibdo", m, 40, 4) for m in (0, 30, 60, 90)] + \
-           [reading("quibdo", m, 40, 0, uptime_s=60 * (m - 90)) for m in (120, 150, 180, 210)]
-assert verify.deliveries_stall_s(rebooted) == 90 * 60
-print("PASS flat deliveries in the verdict")
+# QA-90: AEA's own location is the last one GMS delivered to earthquake_alerting (minUpdateDistance=1000 m).
+# Real quibdo lines, 24-sep: boot delivery 17:06, the Tadó move 18:06 and 18:11.
+QUIBDO_GMS = """      09-24 17:06:15.044: delivered locations[1] to 10144/com.google.android.gms[earthquake_alerting]/85e9f318
+      09-24 18:06:19.406: delivered locations[1] to 10144/com.google.android.gms[earthquake_alerting]/bd31da74
+      09-24 18:06:19.408: delivered locations[1] to 10144/com.google.android.gms[earthquake_detection]/861b2f5a
+      09-24 18:11:19.436: delivered locations[1] to 10144/com.google.android.gms[earthquake_alerting]/bd31da74
+      10144/com.google.android.gms[earthquake_alerting]: total = 2h28m51s, min/max = 0s/30m, deliveries = 4
+"""
+assert verify.alerting_location_age_s(QUIBDO_GMS, "2026-09-24T19:26:15", 8900.0) == 3600 + 14 * 60 + 56
+assert verify.alerting_location_age_s(QUIBDO_GMS, None, 8900.0) == 8900.0, "no guest clock: the uptime bounds it"
+assert verify.alerting_location_age_s("only earthquake_detection here", "2026-09-24T19:26:15", 8900.0) == 8900.0
+assert verify.alerting_location_age_s("      12-31 23:00:00.000: delivered locations[1] to x[earthquake_alerting]/1",
+                                      "2027-01-01T01:00:00", 1e6) == 7200, "the log has no year"
+assert verify.alerting_deliveries(QUIBDO_GMS) == 4
+assert verify.alerting_location_age_s(QUIBDO_GMS + "      09-24 19:00:00.000: delivered locations[1] to 10144/com.google.android.gms[earthquake_detection]/1\n",
+                                      "2026-09-24T19:26:15", 8900.0) == 3600 + 14 * 60 + 56, "a later earthquake_detection delivery is not AEA's"
+
+# The rule: > 20 h on any receptor, GpsKeeper or not. A flat counter alone is healthy (stationary).
+fresh_gps_old_aea = [{**reading("quibdo", 0, 40, 4), "alert_age_s": 20 * 3600 + 1}]
+assert verify.location_problems(fresh_gps_old_aea, {"quibdo"}) == ["quibdo: AEA's location 20.0 h old (> 20 h)"]
+assert verify.location_problems([{**reading("chaparral", 0, 3600, 2), "alert_age_s": 20 * 3600}], set()) == []
+assert verify.location_problems([{**reading("chaparral", 0, 3600, 2), "alert_age_s": 20 * 3600 + 0.5}], set()) != []
+flat_for_a_day = [{**reading("quibdo", m, 40, 4), "alert_age_s": 600 + 60 * m} for m in range(0, 19 * 60, 30)]
+assert verify.location_problems(flat_for_a_day, {"quibdo"}) == [], "a stationary receptor never grows the counter"
+assert verify.location_problems([reading("quibdo", 0, 40, 4)], {"quibdo"}) == [], "old rows without alert_age_s"
+# The event log can drop AEA's line (GpsKeeper floods it): the last delivery seen in this boot still counts.
+T = 1_790_300_000
+assert verify.remembered_alert_age_s(600.0, T - 9000, T, 20_000) == 600.0, "a line in the log wins"
+assert verify.remembered_alert_age_s(None, T - 9000, T, 20_000) == 9000, "rolled out: remembered delivery"
+assert verify.remembered_alert_age_s(None, T - 9000, T, 5_000) == 5_000, "remembered from before this boot: uptime"
+assert verify.remembered_alert_age_s(None, None, T, 5_000) == 5_000
+assert verify.last_alerting_delivery_age_s("no lines", "2026-09-24T19:26:15") is None
+print("PASS AEA location age in the verdict (QA-90)")
 
 # Our part of a real alert (QA-86): the 24-sep 16:46 chaparral alert, with the real clock readings.
 CAPTURED, RECEIVED = 1790268409.614, 1790268411.664  # emulator clock, Mac clock
@@ -288,3 +309,112 @@ assert verify.usgs_origin(1790268393, catalog) == 1790268392.437
 assert verify.usgs_origin(1790268393, catalog[:1]) is None, "SGC has whole seconds only"
 assert verify.usgs_origin(1790268393, catalog[2:]) is None, "91 s away is another quake"
 print("PASS origin in ms from USGS when it has the quake")
+
+# The Mac control was retired on 24-sep 19:11 UTC (QA-85 follow-up): the catalog alone is ground truth.
+RETIRED = 1790277060  # 2026-09-24T19:11:00Z
+chaparral_aws = {"id": "chaparral", "lat": 3.72, "lon": -75.48, "kind": "aws", "since": 0}
+chaparral_mac = {**chaparral_aws, "kind": "mac", "until": RETIRED}
+after = {"id": "SGC-after", "source": "sgc", "time": RETIRED + 3600, "lat": 3.8, "lon": -75.5, "mag": 5.0, "place": "x"}
+before = {**after, "id": "SGC-before", "time": RETIRED - 3600}
+mac_up = lambda kind, receiver_id, t: True
+findings, _ = verify.classify([after], [], [chaparral_aws, chaparral_mac], mac_up, RETIRED + 7200)
+assert [(f["kind"], f["verdict"]) for f in findings] == [("aws", "MISS")], "a retired Mac makes no rows of its own"
+assert findings[0]["cause"] == f"{verify.UNEXPLAINED}; {verify.CONTROL_RETIRED}", findings[0]["cause"]
+assert verify.fails(findings[0]), "an unexplained miss with no control is still a FAIL"
+assert verify.verdict(findings, [], {}, {"sent": 0}, [], 1.0)[0] == "FAIL"
+# Explained by the catalog (M4.6, within 0.3 of the M4.5 threshold): still listed, does not fail, by the same rules as before.
+findings, _ = verify.classify([{**after, "mag": 4.6}], [], [chaparral_aws, chaparral_mac], mac_up, RETIRED + 7200)
+assert findings[0]["cause"] == f"{verify.NEAR_THRESHOLD}; {verify.CONTROL_RETIRED}" and not verify.fails(findings[0])
+# Before retirement the Mac still controls: its silence means Google did not alert.
+findings, _ = verify.classify([before], [], [chaparral_aws, chaparral_mac], mac_up, RETIRED)
+assert {(f["kind"], f["cause"]) for f in findings} == {("aws", verify.GOOGLE_SILENT), ("mac", verify.UNEXPLAINED)}
+print("PASS Mac control retired: catalog alone, labelled retired, never down")
+
+# Explained misses with no control can hide a real failure if they keep coming.
+def miss(day, cause=f"{verify.NEAR_THRESHOLD}; {verify.CONTROL_RETIRED}", receiver="chaparral"):
+    return {"kind": "aws", "receiver": receiver, "time": RETIRED + day * 86400, "verdict": "MISS", "cause": cause}
+def hit(day):
+    return {"kind": "aws", "receiver": "chaparral", "time": RETIRED + day * 86400, "verdict": "HIT", "cause": None}
+END = RETIRED + 8 * 86400
+assert verify.repeated_explained_misses([miss(2), miss(4)], END) == []
+assert verify.repeated_explained_misses([miss(2), miss(4), miss(6)], END) == \
+    ["chaparral: no control, repeated explained misses (3 in 7 days, no hit in between)"]
+assert verify.repeated_explained_misses([miss(2), miss(4), hit(5), miss(6)], END) == [], "a hit resets the count"
+assert verify.repeated_explained_misses([miss(2), {**hit(3), "kind": "mac"}, miss(4), miss(6)], END) != [], \
+    "a Mac hit is not an AWS hit"
+assert verify.repeated_explained_misses([miss(0.5), miss(4), miss(6)], END) == [], "older than 7 days"
+assert verify.repeated_explained_misses([miss(2), miss(4), miss(6, receiver="quibdo")], END) == [], "per receptor"
+assert verify.repeated_explained_misses([miss(2), miss(4), miss(6, cause=verify.NEAR_THRESHOLD)], END) == [], \
+    "with a control, an explained miss is not suspicious"
+assert verify.repeated_explained_misses([miss(2), miss(4), miss(6, cause=f"{verify.UNEXPLAINED}; {verify.CONTROL_RETIRED}")], END) == [], \
+    "an unexplained miss is already a FAIL, not part of this streak"
+assert verify.repeated_explained_misses([miss(2), miss(4), miss(9)], END) == [], "after `end` does not count"
+assert verify.verdict([], [], {}, {"sent": 0}, [], 1.0,
+                      verify.repeated_explained_misses([miss(2), miss(4), miss(6)], END))[0] == "DEGRADED"
+print("PASS repeated explained misses with no control")
+
+# Canary pair (General Santos + Glan, 32 km apart): each is the other's control.
+gsantos = {"id": "general-santos", "lat": 6.11, "lon": 125.17, "kind": "aws", "since": 0}
+glan = {"id": "glan", "lat": 5.82, "lon": 125.20, "kind": "aws", "since": 0}
+gsantos["pair"], glan["pair"] = glan, gsantos
+offshore = {"id": "us-mindanao", "source": "usgs", "time": RETIRED + 3600, "lat": 5.95, "lon": 125.40, "mag": 5.5, "place": "x"}
+both_up = lambda kind, receiver_id, t: True
+def capture(receiver):
+    return {"receiver": receiver, "kind": "aws", "origin": offshore["time"] + 1, "captured": offshore["time"] + 20}
+def causes(captures, covered=both_up, event=offshore):
+    findings, _ = verify.classify([event], captures, [gsantos, glan], covered, event["time"] + 7200)
+    return {f["receiver"]: (f["verdict"], f["cause"]) for f in findings}
+
+assert causes([capture("glan")])["general-santos"] == ("MISS", verify.PAIR_CAPTURED)
+assert verify.fails({"kind": "aws", "verdict": "MISS", "cause": verify.PAIR_CAPTURED}), "one misses = FAIL"
+assert causes([]) == {"general-santos": ("MISS", verify.PAIR_SILENT), "glan": ("MISS", verify.PAIR_SILENT)}
+assert not verify.fails({"kind": "aws", "verdict": "MISS", "cause": verify.PAIR_SILENT}), "both miss = Google silent"
+# A partner that was down is no control: the miss falls back to the catalog rules.
+glan_down = lambda kind, receiver_id, t: receiver_id != "glan"
+assert causes([], glan_down)["general-santos"] == ("MISS", f"{verify.UNEXPLAINED}; {verify.NO_CONTROL}")
+assert causes([], glan_down)["glan"][1] == verify.DOWN
+# Nor is a partner the quake did not reach: an M5.0 north of General Santos, outside Glan's radius.
+north = {**offshore, "id": "us-north", "lat": 6.70, "lon": 125.10, "mag": 5.0}
+assert verify.lab.km_between(glan["lat"], glan["lon"], north["lat"], north["lon"]) > verify.lab.beaware_radius_km(5.0) \
+    >= verify.lab.km_between(gsantos["lat"], gsantos["lon"], north["lat"], north["lon"]), "fixture no longer splits the pair"
+assert causes([], event=north)["general-santos"][1].startswith(verify.UNEXPLAINED)
+print("PASS canary pair: one misses = FAIL, both miss = Google silent, only when the partner counts")
+
+# A deploy that rolled back is an outage, not a planned restart (infra/deploy/remote.sh).
+evidence = [{"type": "DEPLOY", "at": "2026-09-24T16:17:00.000Z", "by": "bootstrap"},
+            {"type": "DEPLOY", "at": "2026-09-25T10:00:00.000Z", "by": "ci"},
+            {"type": "DEPLOY", "at": "2026-09-25T10:07:10.000Z", "by": "ci-rollback"},
+            {"type": "DEPLOY", "at": "2026-09-25T10:12:00.000Z", "by": "ci"},  # the fix, after the rollback
+            {"type": "DEPLOY", "at": "2026-09-25T12:00:00.000Z", "by": "ci"},
+            {"type": "WEB_PUSH_DISPATCH", "at": "2026-09-25T12:01:00.000Z"}]
+planned = verify.planned_deploys(evidence)
+assert [verify.datetime.fromtimestamp(t, verify.timezone.utc).strftime("%d %H:%M") for t in planned] == ["24 16:17", "25 10:12", "25 12:00"], planned
+print("PASS a rolled-back deploy and its rollback are not excused")
+
+# Live coverage notices: quibdo on 24-sep, covered until 21:15, then uncovered for 2 h 25 min.
+Q0 = 1790284500  # 2026-09-24T21:15:00Z
+def poll(minute, covered, error=None):
+    record = {"at": Q0 + 60 * minute, "sensors": {"quibdo": {"covered": covered}}}
+    return {**record, "error": error, "sensors": {}} if error else record
+health = [poll(-5, True)] + [poll(m, False) for m in range(0, 146)]
+told, runs = [], {}
+for i in range(1, len(health) + 1):
+    notices, runs = verify.live_coverage_notices(health[:i], ["quibdo"], runs)
+    told += [(round((health[i - 1]["at"] - Q0) / 60), notice) for notice in notices]
+assert [(m, n.split()[0]) for m, n in told] == [(15, "DEGRADED"), (60, "FAIL")], told
+assert "since 21:15 UTC" in told[0][1]
+notices, runs = verify.live_coverage_notices(health + [poll(146, True)], ["quibdo"], runs)
+assert notices == ["RESTORED quibdo: covered again after 146 min"] and runs == {}
+# The monitor's own blind spots (ssh down) neither end the run nor start one.
+gap = [poll(0, False)] + [poll(m, None, error="ssh") for m in range(1, 20)] + [poll(20, False)]
+assert verify.uncovered_since(gap, "quibdo") == Q0
+assert verify.uncovered_since([poll(0, True)] + [poll(m, None, error="ssh") for m in range(1, 30)], "quibdo") is None
+# The gateway itself down counts as uncovered.
+assert verify.uncovered_since([poll(0, True), poll(1, None, error="gateway")], "quibdo") == Q0 + 60
+# A short blip (a deploy restart) never pages.
+blip = [poll(0, True)] + [poll(m, False) for m in range(1, 10)] + [poll(10, True)]
+runs = {}
+for i in range(1, len(blip) + 1):
+    notices, runs = verify.live_coverage_notices(blip[:i], ["quibdo"], runs)
+    assert notices == [], f"a 9 min blip was told: {notices}"
+print("PASS live coverage notices: 15 min DEGRADED, 60 min FAIL, once each, then RESTORED")

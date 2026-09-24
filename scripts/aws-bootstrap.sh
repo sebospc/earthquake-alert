@@ -13,10 +13,11 @@
 # Copy the whole project first: the gateway is installed from ../gateway.
 # Second step, only after signing in to Google by hand on every AVD (that needs a person):
 #
-#   sudo ./aws-bootstrap.sh listener path/to/android-listener-debug.apk chaparral quibdo
+#   sudo ./aws-bootstrap.sh listener path/to/android-listener-debug.apk emulator-5554=chaparral emulator-5556=quibdo
 #
-# installs the listener on sensor-1, sensor-2, ... and pushes each one its relay.json with
-# the sensor_id in the same order. Must be a debug APK: run-as only works on debuggable apps.
+# installs the listener on each emulator and pushes it its relay.json. Later runs can name
+# only the sensor (`... listener <apk> quibdo`): its emulator comes from the sensor map, and
+# the other sensors stay as they are. Must be a debug APK: run-as only works on debuggable apps.
 set -euo pipefail
 
 SDK_ROOT=/opt/android-sdk
@@ -33,6 +34,120 @@ TOOLS_DIR=/opt/earthquake-tools
 SENSOR_MAP=/etc/earthquake-sensors.map
 
 die() { echo "error: $*" >&2; exit 1; }
+
+
+# adb and the emulator console only trust the user that started the emulator (its adbkey
+# and console token live in that home). As root the device shows up "unauthorized".
+aea_adb() {
+  sudo -u "$EMULATOR_USER" -H "$SDK_ROOT/platform-tools/adb" "$@"
+}
+
+# The adb server is shared (the scrcpy tunnel used for the Google sign-in, any operator), so
+# it is restarted only when it is visibly someone else's: our devices show up unauthorized.
+# Then once, never on every run. Offline is normal while booting and a restart does not help.
+restart_foreign_adb_server() {
+  if aea_adb devices | grep -qE "^emulator-[0-9]+[[:space:]]+unauthorized"; then
+    aea_adb kill-server
+    aea_adb start-server
+    sleep 5
+  fi
+}
+
+# Prints "<serial> <sensor_id>" per argument, or dies. A bare sensor_id takes its emulator
+# from the map; picking by position once installed on the wrong emulator and dropped the
+# other sensor. A new pairing has to be explicit, and may not steal a mapped serial or id.
+resolve_listener_targets() {
+  local map=$1; shift
+  local arg serial sensor_id mapped
+  for arg in "$@"; do
+    if [[ $arg == *=* ]]; then
+      serial=${arg%%=*}
+      sensor_id=${arg#*=}
+      [[ $serial =~ ^emulator-[0-9]+$ && -n $sensor_id ]] || die "bad target $arg (want emulator-NNNN=sensor_id)"
+      mapped=$(awk -v s="$serial" '$1 == s {print $2}' "$map" 2>/dev/null || true)
+      [[ -z $mapped || $mapped == "$sensor_id" ]] \
+        || die "$serial is $mapped in $map; remove that line first to reassign it"
+      mapped=$(awk -v id="$sensor_id" '$2 == id {print $1}' "$map" 2>/dev/null || true)
+      [[ -z $mapped || $mapped == "$serial" ]] \
+        || die "$sensor_id is on $mapped in $map; remove that line first to move it"
+    else
+      sensor_id=$arg
+      serial=$(awk -v id="$sensor_id" '$2 == id {print $1}' "$map" 2>/dev/null || true)
+      [[ -n $serial ]] || die "$sensor_id is not in $map: name its emulator, emulator-NNNN=$sensor_id"
+    fi
+    echo "$serial $sensor_id"
+  done
+}
+
+# The map with the given lines added or replaced; every other sensor is kept as it was.
+merge_sensor_map() {
+  local map=$1 new_lines=$2
+  { NEW_LINES=$new_lines awk 'BEGIN {
+        n = split(ENVIRON["NEW_LINES"], lines, "\n")
+        for (i = 1; i <= n; i++) if (split(lines[i], f, " ") >= 2) { serial[f[1]]; id[f[2]] }
+      }
+      !($1 in serial) && !($2 in id)' "$map" 2>/dev/null || true
+    printf '%s' "$new_lines"; }
+}
+
+install_listener() {
+  local apk=$1; shift
+  local sensors_json="$GATEWAY_DIR/public/sensors.json"
+  [[ -f $apk ]] || die "apk not found: $apk"
+  [[ -f $GATEWAY_ENV && -f $sensors_json ]] || die "run the full bootstrap first"
+  local master
+  master=$(sed -n 's/^RELAY_HMAC_SECRET=//p' "$GATEWAY_ENV")
+  # The emulator user has to read the apk; root's copy may sit where it cannot.
+  local readable_apk
+  readable_apk=$(mktemp --suffix=.apk)
+  install -m 644 "$apk" "$readable_apk"
+  restart_foreign_adb_server
+  local targets
+  targets=$(resolve_listener_targets "$SENSOR_MAP" "$@") || exit 1
+  local sensor_map=""
+  local serial sensor_id
+  while read -r serial sensor_id; do
+    # A typo here would make the gateway answer 400 to every alert, forever.
+    local place
+    place=$(node -e '
+      const sensor = require(process.argv[1]).sensors.find(entry => entry.id === process.argv[2]);
+      if (!sensor) process.exit(1);
+      console.log(`${sensor.lat} ${sensor.lon}`);' "$sensors_json" "$sensor_id") \
+      || die "unknown sensor_id $sensor_id (see $sensors_json)"
+    [[ $(aea_adb -s "$serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r') == 1 ]] \
+      || die "$serial ($sensor_id) is not booted, or adb is not authorized for $EMULATOR_USER"
+    # Per-sensor key, HMAC(master, sensor_id): a leaked emulator cannot sign for the others.
+    local sensor_secret
+    sensor_secret=$(printf '%s' "$sensor_id" | openssl dgst -sha256 -hmac "$master" -hex | awk '{print $NF}')
+    # -g grants the runtime permissions, location included: GpsKeeperService needs it to
+    # hold GPS open, or every later geo fix is ignored and the location ages out (QA-84).
+    aea_adb -s "$serial" install -r -g "$readable_apk"
+    aea_adb -s "$serial" shell dumpsys package com.earthquakes.relay \
+      | grep -q "android.permission.ACCESS_FINE_LOCATION: granted=true" \
+      || die "$serial: ACCESS_FINE_LOCATION not granted to the listener"
+    # 10.0.2.2 is the host's loopback as seen from inside the emulator.
+    printf '{"gateway_url":"http://10.0.2.2:8787/events","hmac_secret":"%s","sensor_id":"%s"}' \
+      "$sensor_secret" "$sensor_id" \
+      | aea_adb -s "$serial" exec-in run-as com.earthquakes.relay sh -c 'mkdir -p files && cat > files/relay.json'
+    aea_adb -s "$serial" shell cmd notification allow_listener com.earthquakes.relay/.CaptureService
+    echo "$serial -> $sensor_id"
+    sensor_map+="$serial $sensor_id $place $sensor_secret"$'\n'
+  done <<< "$targets"
+  rm -f "$readable_apk"
+  # Tells the host health check which emulator answers for which sensor, where it is, and
+  # the per-sensor key to sign with. Only the emulator user can read it; the health check
+  # never gets the master secret or the VAPID key.
+  local merged
+  merged=$(mktemp)
+  merge_sensor_map "$SENSOR_MAP" "$sensor_map" > "$merged"
+  install -m 600 -o "$EMULATOR_USER" "$merged" "$SENSOR_MAP"
+  rm -f "$merged"
+  # Report now instead of leaving the sensor red until the next timer tick.
+  systemctl start --no-block sensor-health.service
+}
+
+# Sourced by scripts/test_bootstrap_listener.py: functions only, nothing runs.
+[[ ${BASH_SOURCE[0]} == "$0" ]] || return 0
 
 # Measured on r8i.large: booting is what needs CPU (two at once starve system_server and
 # its watchdog kills them), a booted emulator idles near 0 CPU and ~3.2 GB. So they boot
@@ -53,78 +168,8 @@ fi
 
 [[ $EUID -eq 0 ]] || die "run as root (sudo)"
 
-# adb and the emulator console only trust the user that started the emulator (its adbkey
-# and console token live in that home). As root the device shows up "unauthorized".
-aea_adb() {
-  sudo -u "$EMULATOR_USER" -H "$SDK_ROOT/platform-tools/adb" "$@"
-}
-
-# The adb server is shared (the scrcpy tunnel used for the Google sign-in, any operator), so
-# it is restarted only when it is visibly someone else's: our devices show up unauthorized.
-# Then once, never on every run. Offline is normal while booting and a restart does not help.
-restart_foreign_adb_server() {
-  if aea_adb devices | grep -qE "^emulator-[0-9]+[[:space:]]+unauthorized"; then
-    aea_adb kill-server
-    aea_adb start-server
-    sleep 5
-  fi
-}
-
-install_listener() {
-  local apk=$1; shift
-  local sensors_json="$GATEWAY_DIR/public/sensors.json"
-  [[ -f $apk ]] || die "apk not found: $apk"
-  [[ -f $GATEWAY_ENV && -f $sensors_json ]] || die "run the full bootstrap first"
-  local master
-  master=$(sed -n 's/^RELAY_HMAC_SECRET=//p' "$GATEWAY_ENV")
-  # The emulator user has to read the apk; root's copy may sit where it cannot.
-  local readable_apk
-  readable_apk=$(mktemp --suffix=.apk)
-  install -m 644 "$apk" "$readable_apk"
-  restart_foreign_adb_server
-  local i=1
-  local sensor_map=""
-  for sensor_id in "$@"; do
-    local serial="emulator-$((5552 + 2 * i))"
-    # A typo here would make the gateway answer 400 to every alert, forever.
-    local place
-    place=$(node -e '
-      const sensor = require(process.argv[1]).sensors.find(entry => entry.id === process.argv[2]);
-      if (!sensor) process.exit(1);
-      console.log(`${sensor.lat} ${sensor.lon}`);' "$sensors_json" "$sensor_id") \
-      || die "unknown sensor_id $sensor_id (see $sensors_json)"
-    [[ $(aea_adb -s "$serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r') == 1 ]] \
-      || die "$serial (sensor-$i) is not booted, or adb is not authorized for $EMULATOR_USER"
-    # Per-sensor key, HMAC(master, sensor_id): a leaked emulator cannot sign for the others.
-    local sensor_secret
-    sensor_secret=$(printf '%s' "$sensor_id" | openssl dgst -sha256 -hmac "$master" -hex | awk '{print $NF}')
-    # -g grants the runtime permissions, location included: GpsKeeperService needs it to
-    # hold GPS open, or every later geo fix is ignored and the location ages out (QA-84).
-    aea_adb -s "$serial" install -r -g "$readable_apk"
-    aea_adb -s "$serial" shell dumpsys package com.earthquakes.relay \
-      | grep -q "android.permission.ACCESS_FINE_LOCATION: granted=true" \
-      || die "$serial: ACCESS_FINE_LOCATION not granted to the listener"
-    # 10.0.2.2 is the host's loopback as seen from inside the emulator.
-    printf '{"gateway_url":"http://10.0.2.2:8787/events","hmac_secret":"%s","sensor_id":"%s"}' \
-      "$sensor_secret" "$sensor_id" \
-      | aea_adb -s "$serial" exec-in run-as com.earthquakes.relay sh -c 'mkdir -p files && cat > files/relay.json'
-    aea_adb -s "$serial" shell cmd notification allow_listener com.earthquakes.relay/.CaptureService
-    echo "sensor-$i ($serial) -> $sensor_id"
-    sensor_map+="$serial $sensor_id $place $sensor_secret"$'\n'
-    i=$((i + 1))
-  done
-  rm -f "$readable_apk"
-  # Tells the host health check which emulator answers for which sensor, where it is, and
-  # the per-sensor key to sign with. Only the emulator user can read it; the health check
-  # never gets the master secret or the VAPID key.
-  install -m 600 -o "$EMULATOR_USER" /dev/null "$SENSOR_MAP"
-  printf '%s' "$sensor_map" > "$SENSOR_MAP"
-  # Report now instead of leaving the sensor red until the next timer tick.
-  systemctl start --no-block sensor-health.service
-}
-
 if [[ ${1:-} == listener ]]; then
-  [[ $# -ge 3 ]] || die "usage: $0 listener <apk> <sensor_id>... (one per emulator, in order)"
+  [[ $# -ge 3 ]] || die "usage: $0 listener <apk> <sensor_id | emulator-NNNN=sensor_id>..."
   shift
   install_listener "$@"
   exit 0

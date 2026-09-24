@@ -1,0 +1,70 @@
+# The three alarms for one receptor host, fed by aea-cw-probe.py with Host=<instance id>.
+# One stack per host, so a dead host cannot hide behind a healthy one. Needs stack.yml first.
+#   aws cloudformation deploy --region sa-east-1 --stack-name aea-lab-alarms-<instance id> \
+#     --template-file infra/cloudwatch/host-alarms.yml --parameter-overrides Host=<instance id> HasGpsKeeper=true \
+#     --tags project=aea-lab
+# Retiring a host: delete its stack, or its alarms page forever on missing data.
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  Host:
+    Type: String
+    AllowedPattern: "i-[0-9a-f]+"
+  HasGpsKeeper:
+    Type: String
+    AllowedValues: ["true", "false"]
+    Description: Same as AEA_CW_GPSKEEPER being non-empty on the host. Without it the metric never comes and the alarm would page forever.
+Conditions:
+  WatchDeliveries: !Equals [!Ref HasGpsKeeper, "true"]
+Resources:
+  # Every alarm: missing data = the host, the agent or the probe is gone. That pages.
+  GatewayDownAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub aea-lab-${Host}-gateway-down
+      AlarmDescription: !Sub Gateway /status unreachable for 3 min on ${Host}, or the host or its probe is down.
+      Namespace: AeaLab
+      MetricName: GatewayUp
+      Dimensions: [{ Name: Host, Value: !Ref Host }]
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!ImportValue aea-lab-alert-topic]
+      OKActions: [!ImportValue aea-lab-alert-topic]
+
+  ReceptorUncoveredAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub aea-lab-${Host}-receptor-uncovered
+      AlarmDescription: !Sub A receptor on ${Host} has not been covered in /status for 10 min. Check /status for which.
+      Namespace: AeaLab
+      MetricName: UncoveredReceptors
+      Dimensions: [{ Name: Host, Value: !Ref Host }]
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 10
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!ImportValue aea-lab-alert-topic]
+      OKActions: [!ImportValue aea-lab-alert-topic]
+
+  DeliveriesFlatAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: WatchDeliveries
+    Properties:
+      AlarmName: !Sub aea-lab-${Host}-earthquake-alerting-flat
+      AlarmDescription: !Sub A GpsKeeper receptor on ${Host} has had no new earthquake_alerting delivery for over 2 h. Per-receptor totals are in /aea-lab/metrics.
+      Namespace: AeaLab
+      MetricName: DeliveriesFlatSeconds
+      Dimensions: [{ Name: Host, Value: !Ref Host }]
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 7200
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!ImportValue aea-lab-alert-topic]
+      OKActions: [!ImportValue aea-lab-alert-topic]

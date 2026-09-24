@@ -1,0 +1,45 @@
+name: deploy
+
+# Gateway and host tools, after a green CI on main, once someone approves `production`.
+# The APK is not here: see deploy-apk.yml.
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  gateway-and-tools:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-24.04
+    environment: production
+    permissions:
+      id-token: write
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: gateway-${{ github.event.workflow_run.head_sha }}
+          path: dist
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: sa-east-1
+      # Gateway first: it rolls itself back if it cannot prove coverage.
+      - run: |
+          bash infra/deploy/ssm-run.sh "${{ vars.RECEPTOR_INSTANCE_ID }}" "${{ vars.DEPLOY_BUCKET }}" \
+            "${{ github.event.workflow_run.head_sha }}" dist \
+            "gateway BUNDLE ${{ github.event.workflow_run.head_sha }}" "tools BUNDLE"

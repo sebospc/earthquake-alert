@@ -30,11 +30,21 @@ history. The minutes without coverage and the outages come from there.
 The control is the Mac emulator fleet: `lab-log.jsonl` and `lab-state.json` in
 `~/Library/Application Support/aea-lab/evidence`, read-only. If the Mac captured and AWS did not,
 with AWS covered, it is FAIL. If the Mac was down, it stays "no control" and does not count.
+The user retired the Mac fleet on 2026-09-24 19:11 UTC, EC2 clock (`MONITOR_MAC_RETIRED_AT`). From then on
+the catalogs are the only ground truth: an expected quake with no AWS capture is a MISS judged by
+the catalog causes alone (FAIL when unexplained), labelled "the Mac control is retired", and the
+Mac makes no rows or downtime of its own. The control poll stops at the same moment. Without a control, 3 explained
+misses on one AWS receptor in 7 days, with no hit in between, is DEGRADED: "near threshold" can
+hide a real failure once, not every week. Canary pairs (`MONITOR_CANARY_PAIRS=a:b`,
+docs/siting-canaries.md) control each other. If the partner was covered and inside the radius:
+both missing is "Google did not alert", only one missing is FAIL.
 
 The rules and thresholds ("expected", the radius, NEAR) come from `scripts/lab.py`, which is
-imported without touching it. The location lowers the verdict to DEGRADED if it is older than 1 h, or the deliveries do not
-grow in 2 h, on a receptor with GpsKeeper (`MONITOR_GPSKEEPER`, default `quibdo`); on one
-without it, if it is older than 20 h or null. A real alert whose listener → monitor time, with both clocks
+imported without touching it. The GPS location lowers the verdict to DEGRADED if it is older than 1 h on a receptor with
+GpsKeeper (`MONITOR_GPSKEEPER`, default `quibdo`), or older than 20 h or null on one without it.
+AEA's own copy (the last location GMS delivered to `earthquake_alerting`) over 20 h is DEGRADED on
+any receptor. AEA only gets a new one on a move of 1 km or more, so a flat delivery counter is
+normal (QA-90). A real alert whose listener → monitor time, with both clocks
 corrected, goes over 2 s (or never reaches the monitor) is DEGRADED too. The classification is in `verify.py`, which is pure and has the tests.
 
 ## External services

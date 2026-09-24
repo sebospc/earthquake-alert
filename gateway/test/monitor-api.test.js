@@ -47,7 +47,7 @@ function mockPushService(t, answer = () => ({ statusCode: 201 })) {
   return pushed;
 }
 
-function request(port, method, path, body = "", headers = {}) {
+function request(port, method, path, body = "", headers = {}, { bodyDelayMs = 0 } = {}) {
   return new Promise((resolve, reject) => {
     const outgoing = http.request({ hostname: "127.0.0.1", port, path, method, headers: {
       "content-type": "application/json", "content-length": Buffer.byteLength(body), ...headers } }, response => {
@@ -56,7 +56,13 @@ function request(port, method, path, body = "", headers = {}) {
       response.on("end", () => resolve({ status: response.statusCode, body: text }));
     });
     outgoing.on("error", reject);
-    outgoing.end(body);
+    if (bodyDelayMs === 0) {
+      outgoing.end(body);
+      return;
+    }
+    // Headers now, body later: a slow uplink as the gateway sees it.
+    outgoing.flushHeaders();
+    setTimeout(() => outgoing.end(body), bodyDelayMs);
   });
 }
 
@@ -73,7 +79,7 @@ function signed(port, method, path, payload, { key = MONITOR_KEY, skewS = 0 } = 
 const subscription = (endpoint, sensorId, extra = {}) =>
   ({ sensor_id: sensorId, subscription: { endpoint, keys: KEYS }, ...extra });
 
-function sendAlert(port, sensorId, overrides = {}) {
+function sendAlert(port, sensorId, overrides = {}, options = {}) {
   const now = Date.now();
   const raw = JSON.stringify({
     event_id: `${sensorId}:t${now}:${Math.random()}:alert`, source: "android_earthquake_alert_candidate",
@@ -82,7 +88,7 @@ function sendAlert(port, sensorId, overrides = {}) {
     interruption_level: "time-sensitive", time_occurred_s: Math.floor(now / 1000) - 17, ...overrides
   });
   return request(port, "POST", "/events", raw,
-    { "x-relay-signature": createHmac("sha256", sensorKey(SECRET, sensorId)).update(raw).digest("hex") });
+    { "x-relay-signature": createHmac("sha256", sensorKey(SECRET, sensorId)).update(raw).digest("hex") }, options);
 }
 
 test("monitor routes answer 503 without MONITOR_KEY, 401 without a fresh valid signature", async t => {
@@ -216,7 +222,8 @@ test("latency stamps: received_at <= accepted_at, 202 before the fanout, sent_at
     JSON.stringify({ device_token: "ab".repeat(32), sensor_ids: ["chaparral"], platform: "ios" }));
   const before = new Date().toISOString();
 
-  const answer = await sendAlert(port, "chaparral");
+  // The body arrives 150 ms after the headers: received_at must see the difference.
+  const answer = await sendAlert(port, "chaparral", {}, { bodyDelayMs: 150 });
   assert.equal(answer.status, 202);
   await wait(50);
   assert.equal(pushed.length, 1, "the push had not started");
@@ -225,7 +232,7 @@ test("latency stamps: received_at <= accepted_at, 202 before the fanout, sent_at
 
   const { records } = JSON.parse((await signed(port, "GET", `/evidence?since=${before}`)).body);
   const dispatch = records.find(record => record.type === "WEB_PUSH_DISPATCH");
-  assert.ok(Date.parse(dispatch.received_at) <= Date.parse(dispatch.accepted_at));
+  assert.ok(Date.parse(dispatch.accepted_at) - Date.parse(dispatch.received_at) >= 140, JSON.stringify(dispatch));
   const [webPush] = dispatch.web_push;
   const [apns] = dispatch.apns;
   for (const result of [webPush, apns]) {

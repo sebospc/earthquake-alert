@@ -1,0 +1,74 @@
+# Temporary HTTPS for the PWA and the phone API: Elastic IP + CloudFront (*.cloudfront.net,
+# default certificate) in front of Caddy :80 on the receptor host (infra/https/Caddyfile).
+# Staging until the real domain. The alert path (listener -> 10.0.2.2:8787) never goes here.
+# Deploy with infra/https/deploy.sh (it handles the origin secret), in this order:
+#   deploy.sh secret, then install.sh on the host, then deploy.sh stack.
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  InstanceId:
+    Type: AWS::EC2::Instance::Id
+  SecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+  CloudFrontPrefixList:
+    Type: String
+    AllowedPattern: "pl-[0-9a-f]+"
+  # Source of truth: SSM SecureString /aea-lab/origin-secret, passed in by deploy.sh.
+  OriginSecret:
+    Type: String
+    NoEcho: true
+    MinLength: 32
+Resources:
+  # Survives a spot stop/start: the association stays with the instance.
+  ReceptorAddress:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref InstanceId
+
+  # Any CloudFront distribution can reach this port; Caddy lets through only the one that
+  # sends our X-Origin-Verify.
+  OriginFromCloudFrontOnly:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref SecurityGroupId
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      SourcePrefixListId: !Ref CloudFrontPrefixList
+      Description: CloudFront origin-facing only, to Caddy in front of the gateway
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: aea-lab gateway PWA and phone API (staging)
+        HttpVersion: http2and3
+        PriceClass: PriceClass_All  # edges in South America, close to the phones
+        Origins:
+          - Id: gateway
+            # The EIP's public DNS name: CloudFront origins must be names, not IPs.
+            DomainName: !Join ["", ["ec2-", !Join ["-", !Split [".", !Ref ReceptorAddress]], !Sub ".${AWS::Region}.compute.amazonaws.com"]]
+            CustomOriginConfig:
+              OriginProtocolPolicy: http-only
+              HTTPPort: 80
+              OriginReadTimeout: 30
+            OriginCustomHeaders:
+              - HeaderName: X-Origin-Verify
+                HeaderValue: !Ref OriginSecret
+        DefaultCacheBehavior:
+          TargetOriginId: gateway
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          # Managed CachingDisabled: /status and subscriptions must never be served stale.
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+          # Managed AllViewerExceptHostHeader: every header, query and cookie, Host rewritten
+          # to the origin's name.
+          OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+Outputs:
+  PublicUrl:
+    Value: !Sub https://${Distribution.DomainName}
+  ElasticIp:
+    Value: !Ref ReceptorAddress

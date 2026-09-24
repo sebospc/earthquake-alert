@@ -87,3 +87,47 @@ Not applied. The ids that already exist are kept (`bucaramanga-a`, `quibdo`).
 { "id": "girardot", "name": "Girardot", "lat": 4.3032, "lon": -74.8037, "public": true },
 { "id": "quibdo", "name": "Quibdó", "lat": 5.6947, "lon": -76.6611, "public": true }
 ```
+
+## Demand-driven growth (design, not built)
+
+Goal: a user outside coverage leaves a signal, and enough signal in one area with real
+quake risk becomes a receptor there. Today the phone never sends its location, and the app
+says so. This design keeps that: the phone sends only a coarse cell, which it computes itself.
+
+1. Demand record. When no public receptor is within `partial_km` (78), the app registers
+   with `demand_cell` instead of `sensor_ids`. The cell is a 0.1° grid (about 11 km):
+   `floor(lat*10),floor(lon*10)`, for example `"37,-755"`. It lives on the device record,
+   so there is one cell per device, no extra id, and it goes away with the token (410 or
+   DELETE). The app shows the same "Tu zona todavía no tiene cobertura." as today.
+2. Placement. A daily job on the host groups demand cells within 31 km of each other. The
+   score is devices × alerts per year at the demand-weighted centroid (Allen et al. data,
+   same method as above). The hazard has a floor, otherwise the Caribbean coast can never
+   get a receptor however many users it has. It places one (id: nearest town) when the
+   score passes the threshold, it is 40 km or more from any receptor, and the monthly
+   budget cap is not reached. Above the cap, a person approves.
+3. More receptors at one site. Users per receptor is not a limit: 50k APNs went out in under
+   2 s. A second receptor at the same place is for redundancy only, on another host or AZ,
+   once the site has real users. No new API: own id, same coordinates; the app already
+   registers the 2-3 closest and the gateway already sends one push per quake per phone.
+4. Provisioning time. Boot, the GMS update and the `earthquake_alerting` registration take
+   about 15-20 min, but the daily job and a possible new host dominate: hours to days.
+   Meanwhile the app keeps saying "no coverage". A receptor becomes `public` only after
+   its first `aea_ok=true`; then devices with a cell within 78 km get a coverage push.
+5. Abuse and cost. Demand counts only after one push to that token got a 200 from APNs,
+   so invented tokens never count (APNs rejects them). There is one cell per device, the
+   /devices IP limit applies, App Attest later. The budget cap bounds the worst case in
+   money. Web push subscriptions are free to create in bulk: no PWA demand in v1. A cell
+   is only used or shown with 3 or more devices.
+
+Changes needed:
+- `POST /devices`: accept `demand_cell` with no `sensor_ids` (exactly one of the two),
+  returning `201 {"sensor_ids": [], "demand_cell": ...}`. Leaving coverage re-registers
+  with a cell instead of DELETE. ios-contract: new field, new step in the location flow.
+- Coverage push: `kind: "coverage"` with `reason: "new_receptor"`. The app then downloads
+  `sensors.json` again and registers.
+- Gateway: reload `sensors.json` without a restart (SIGHUP or file watch), and count a
+  device's demand only after its first successful push.
+- Host: the placement job, and an "add receptor" step in `aws-bootstrap.sh` that adds
+  one emulator without touching the running ones.
+- App privacy text: "only the sensor name reaches the server" gains "or an 11 km zone
+  when you have no coverage".

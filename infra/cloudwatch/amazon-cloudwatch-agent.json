@@ -1,0 +1,18 @@
+{
+  "agent": { "run_as_user": "root" },
+  "logs": {
+    "metrics_collected": { "emf": {} },
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          { "file_path": "/var/lib/earthquake-gateway/gateway-evidence.jsonl",
+            "log_group_name": "/aea-lab/gateway-evidence", "log_stream_name": "{instance_id}" },
+          { "file_path": "/var/log/aea-cw/listener-*.jsonl",
+            "log_group_name": "/aea-lab/listener-evidence", "log_stream_name": "{instance_id}" },
+          { "file_path": "/var/log/aea-cw/journal.log",
+            "log_group_name": "/aea-lab/journal", "log_stream_name": "{instance_id}" }
+        ]
+      }
+    }
+  }
+}

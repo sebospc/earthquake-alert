@@ -1,0 +1,59 @@
+# CloudFront's origin on the receptor host. Plain HTTP on :80, reachable only from
+# CloudFront's origin-facing prefix list (security group). The alert path never comes here:
+# listeners post to 10.0.2.2:8787 directly.
+# AEA_ORIGIN_SECRET comes from /etc/caddy/origin.env (install.sh refuses to run without it).
+{
+	auto_https off
+	admin off
+	# Error logs carry the request headers (a 502 while the gateway is down, for example):
+	# the origin secret must not reach the journal.
+	log default {
+		format filter {
+			wrap console
+			fields {
+				request>headers>X-Origin-Verify delete
+			}
+		}
+	}
+}
+
+:80 {
+	# route keeps the order written here; Caddy would otherwise run handle before respond.
+	route {
+		# Every CloudFront distribution shares that prefix list; only ours sends this header.
+		@not_our_cloudfront not header X-Origin-Verify {$AEA_ORIGIN_SECRET}
+		respond @not_our_cloudfront 403
+		# Started without the env file (a manual `caddy run`), the secret is empty and the check
+		# above would only test that the header exists. Then refuse everything instead.
+		@secret_unset expression `"{$AEA_ORIGIN_SECRET}" == ""`
+		respond @secret_unset 403
+
+		# Allowlist, so a new internal endpoint stays private by default. /events, /heartbeat,
+		# /probe and /evidence are HMAC or monitor-only: never public.
+		@phone_api {
+			method POST DELETE
+			path /subscribe /devices
+		}
+		@phone_read {
+			method GET HEAD
+			path / /status /*.html /*.js /*.json /*.webmanifest /*.png /*.svg /*.ico
+		}
+		handle @phone_api {
+			reverse_proxy 127.0.0.1:8787 {
+				# CloudFront already appended the viewer IP last; the gateway rate-limits on the
+				# last entry. Caddy would append CloudFront's edge IP instead, so keep it as is.
+				header_up X-Forwarded-For {http.request.header.X-Forwarded-For}
+				header_up -X-Origin-Verify
+			}
+		}
+		handle @phone_read {
+			reverse_proxy 127.0.0.1:8787 {
+				header_up X-Forwarded-For {http.request.header.X-Forwarded-For}
+				header_up -X-Origin-Verify
+			}
+		}
+		handle {
+			respond 404
+		}
+	}
+}

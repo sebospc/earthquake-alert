@@ -1,0 +1,83 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  gateway:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18  # same major as the EC2 (Ubuntu 24.04 nodejs)
+          cache: npm
+          cache-dependency-path: gateway/package-lock.json
+      - run: npm ci
+        working-directory: gateway
+      - run: npm test
+        working-directory: gateway
+      - name: python and relay checks
+        run: |
+          python3 monitor/test_verify.py
+          for t in scripts/test_*.py infra/*/test_*.py; do python3 "$t"; done
+          node monitor/test_push_receiver.mjs
+          bash scripts/e2e-relay.sh
+          bash infra/deploy/test_remote.sh
+      # The manifests let the host prove, file by file, that what landed is what was built.
+      - name: gateway and tools tarballs
+        run: |
+          mkdir -p dist
+          tar -czf dist/gateway.tar.gz -C gateway src public package.json package-lock.json
+          (cd gateway && find src public package.json package-lock.json -type f | sort | xargs sha256sum) > dist/gateway.manifest
+          tools="scripts/lab.py scripts/sensor-health.py scripts/aea-geofix.py infra/cloudwatch/aea-cw-probe.py infra/deploy/remote.sh"
+          tar -czf dist/tools.tar.gz $tools
+          sha256sum $tools > dist/tools.manifest
+          (cd dist && sha256sum gateway.tar.gz tools.tar.gz > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gateway-${{ github.sha }}
+          path: dist/
+
+  android:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      # The debug build signs with ~/.android/debug.keystore. The receptors trust only the
+      # key in this secret; a build signed with a runner-generated key would fail install -r.
+      # PRs from forks get no secrets: they still test, but upload no APK.
+      - name: signing key
+        id: key
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            mkdir -p ~/.android
+            printf '%s' "$KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - run: ./gradlew --no-daemon :android-listener:testDebugUnitTest :android-listener:assembleDebug
+      - name: apk and checksum
+        if: steps.key.outputs.signed == 'true'
+        run: |
+          mkdir -p dist
+          cp android-listener/build/outputs/apk/debug/android-listener-debug.apk dist/listener.apk
+          # Wrong key = signature mismatch on install -r at deploy time. Fail here instead.
+          apksigner="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner"
+          signer="$("$apksigner" verify --print-certs dist/listener.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+          test "$signer" = "${{ vars.LISTENER_CERT_SHA256 }}" || { echo "::error::APK signer $signer is not the receptor key"; exit 1; }
+          (cd dist && sha256sum listener.apk > listener.apk.sha256)
+      - uses: actions/upload-artifact@v4
+        if: steps.key.outputs.signed == 'true'
+        with:
+          name: listener-apk-${{ github.sha }}
+          path: dist/
