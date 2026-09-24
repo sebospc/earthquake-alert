@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Sismos">
+<link rel="manifest" href="/manifest.webmanifest">
+<title>Alertas de sismo</title>
+<style>
+  :root { color-scheme: light dark; --ok: #1e7a34; --bad: #b3261e; }
+  body { font: 17px/1.45 system-ui, sans-serif; max-width: 34rem; margin: 0 auto; padding: 16px; }
+  .notice { border-left: 4px solid var(--bad); padding: 8px 12px; background: rgba(179, 38, 30, .08); }
+  button { font: inherit; font-weight: 600; width: 100%; padding: 14px; border: 0; border-radius: 10px;
+           background: var(--bad); color: #fff; }
+  button:disabled { opacity: .5; }
+  #coverage { font-weight: 600; }
+  .ok { color: var(--ok); }
+  .bad { color: var(--bad); }
+  [hidden] { display: none; }
+</style>
+</head>
+<body>
+<h1>Alertas de sismo</h1>
+
+<p class="notice">
+  Servicio <strong>complementario y no oficial</strong>. Puede fallar, llegar tarde o no
+  llegar. No reemplaza los avisos del SGC ni de la UNGRD. Solo da tiempo de reaccionar a
+  más de unos 80 km del epicentro: más cerca, el temblor llega antes que el aviso.
+</p>
+
+<section id="ios-install" hidden>
+  <h2>En iPhone, primero agrégala a la pantalla de inicio</h2>
+  <ol>
+    <li>Toca el botón Compartir de Safari.</li>
+    <li>Elige "Agregar a pantalla de inicio".</li>
+    <li>Abre la app desde el ícono nuevo y vuelve a tocar "Activar alertas".</li>
+  </ol>
+  <p>Necesita iOS 16.4 o superior.</p>
+</section>
+
+<button id="activate" type="button">Activar alertas</button>
+<p id="message" role="status"></p>
+
+<section id="coverage-section" hidden>
+  <h2>Cobertura</h2>
+  <p id="sensor"></p>
+  <p id="coverage"></p>
+</section>
+
+<section>
+  <h2>Para que la alerta suene</h2>
+  <p>
+    En iPhone esta alerta no puede saltarse el modo silencio: con el interruptor en
+    silencio llega sin sonido. Los modos de concentración (No molestar, Dormir y otros)
+    la callan por completo.
+  </p>
+  <p>
+    Para permitirla: Ajustes &gt; Concentración, entra a cada modo que uses y en
+    "Apps permitidas" agrega Sismos.
+  </p>
+</section>
+
+<p><small>
+  Tu ubicación se usa solo en este teléfono para elegir el sensor más cercano. Al servidor
+  solo llega el nombre del sensor, nunca tus coordenadas.
+</small></p>
+
+<script type="module">
+import { coverageState, nearestSensor, TIER_TEXT } from "/coverage.js";
+
+const REQUEST_TIMEOUT_MS = 10_000;
+const byId = id => document.getElementById(id);
+
+function vapidKeyBytes(base64url) {
+  const base64 = (base64url + "=".repeat((4 - base64url.length % 4) % 4))
+    .replace(/-/g, "+").replace(/_/g, "/");
+  return Uint8Array.from(atob(base64), char => char.charCodeAt(0));
+}
+
+// Bounded: a gateway that hangs must turn the page red, not leave it loading forever.
+async function fetchJson(path, options = {}) {
+  const response = await fetch(path,
+    { cache: "no-store", signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), ...options });
+  if (!response.ok) throw new Error(`El servidor respondió ${response.status}.`);
+  return response.json();
+}
+
+function currentPosition() {
+  return new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(
+    position => resolve({ lat: position.coords.latitude, lon: position.coords.longitude }),
+    () => reject(new Error("No se pudo obtener tu ubicación. Revisa el permiso de ubicación.")),
+    { maximumAge: 10 * 60_000, timeout: 20_000 }
+  ));
+}
+
+function savedSensor() {
+  try {
+    return JSON.parse(localStorage.getItem("sensor"));
+  } catch {
+    return null;
+  }
+}
+
+function saveSensor(sensor) {
+  try {
+    if (sensor) localStorage.setItem("sensor", JSON.stringify(sensor));
+    else localStorage.removeItem("sensor");
+  } catch {}
+}
+
+async function renderCoverage() {
+  const sensor = savedSensor();
+  byId("coverage-section").hidden = !sensor;
+  if (!sensor) return;
+  byId("sensor").textContent =
+    `Sensor: ${sensor.name}, a ${sensor.km} km. ${TIER_TEXT[sensor.tier] ?? ""}`;
+  const status = await fetchJson("/status").catch(() => null);
+  const { healthy, text } = coverageState(status, sensor.id);
+  byId("coverage").textContent = text;
+  byId("coverage").className = healthy ? "ok" : "bad";
+}
+
+/**
+ * Picks the nearest public sensor from where the phone is now and (re)subscribes to it.
+ * Out of coverage it unsubscribes: a far sensor would stay silent for a quake next door.
+ */
+async function syncSubscription(registration) {
+  const [here, sensorList, status] = await Promise.all([
+    currentPosition(), fetchJson("/sensors.json"), fetchJson("/status")
+  ]);
+  const nearest = nearestSensor(here, sensorList);
+  if (!nearest || nearest.tier === "none") {
+    const existing = await registration.pushManager.getSubscription();
+    if (existing) await existing.unsubscribe();
+    saveSensor(null);
+    return TIER_TEXT.none;
+  }
+  if (!status.web_push_public_key) throw new Error("El servidor no tiene las alertas web activadas.");
+  const subscription = await registration.pushManager.getSubscription()
+    ?? await registration.pushManager.subscribe({
+      userVisibleOnly: true, applicationServerKey: vapidKeyBytes(status.web_push_public_key)
+    });
+  const response = await fetch("/subscribe", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ sensor_id: nearest.id, subscription }),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+  });
+  if (!response.ok) throw new Error(`No se pudo registrar (${response.status}).`);
+  saveSensor({ id: nearest.id, name: nearest.name, km: Math.round(nearest.km), tier: nearest.tier });
+  return "Alertas activadas.";
+}
+
+async function activate() {
+  const button = byId("activate");
+  const message = byId("message");
+  button.disabled = true;
+  message.textContent = "";
+  try {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      throw new Error("Este navegador no admite alertas. En iPhone, agrega la página a la pantalla de inicio primero.");
+    }
+    // Safari shows the prompt only from a direct tap, so it has to come before any await.
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") throw new Error("Sin permiso de notificaciones no hay alertas.");
+    message.textContent = await syncSubscription(await navigator.serviceWorker.ready);
+  } catch (error) {
+    message.textContent = error.message;
+  } finally {
+    button.disabled = false;
+    await renderCoverage();
+  }
+}
+
+// The phone may have moved since it subscribed: the nearest sensor is re-checked on every open.
+async function recheckOnOpen() {
+  if (!savedSensor() || !("Notification" in window) || Notification.permission !== "granted") return;
+  try {
+    byId("message").textContent = await syncSubscription(await navigator.serviceWorker.ready);
+  } catch (error) {
+    byId("message").textContent = error.message;
+  }
+  await renderCoverage();
+}
+
+const isIos = /iPhone|iPad|iPod/.test(navigator.userAgent);
+const isInstalled = navigator.standalone === true || matchMedia("(display-mode: standalone)").matches;
+byId("ios-install").hidden = !(isIos && !isInstalled);
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
+byId("activate").addEventListener("click", activate);
+renderCoverage();
+recheckOnOpen();
+setInterval(renderCoverage, 60_000);
+</script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+name: EarthquakeRelay
+options:
+  bundleIdPrefix: com.example
+  deploymentTarget:
+    iOS: "15.0"
+targets:
+  EarthquakeRelay:
+    type: application
+    platform: iOS
+    sources:
+      - EarthquakeRelay
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.earthquakerelay
+        SWIFT_VERSION: "5.0"
+        CODE_SIGN_ENTITLEMENTS: EarthquakeRelay/EarthquakeRelay.entitlements
+        INFOPLIST_KEY_CFBundleDisplayName: Earthquake Relay Lab
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: true
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: true
+        GENERATE_INFOPLIST_FILE: true
+    entitlements:
+      path: EarthquakeRelay/EarthquakeRelay.entitlements
+      properties:
+        aps-environment: development

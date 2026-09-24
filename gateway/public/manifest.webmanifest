@@ -1,0 +1,10 @@
+{
+  "name": "Alertas de sismo (complementario)",
+  "short_name": "Sismos",
+  "lang": "es",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#b3261e"
+}

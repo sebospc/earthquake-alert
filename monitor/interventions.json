@@ -1,0 +1,8 @@
+[
+  {
+    "sensor": "quibdo",
+    "from": "2026-09-24T16:50:00Z",
+    "max_min": 60,
+    "reason": "Prueba del coordinador: `cmd location set-location-enabled false/true` dejó la ubicación de GMS en null (trampa, QA-84); recuperado con reboot del guest."
+  }
+]

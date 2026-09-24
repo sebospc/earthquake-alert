@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "coverage": {
+    "_why": "A sensor only receives a quake's alert if it lies inside that quake's alert radius. Allen et al. 2025 (Zenodo 15498729, docs/findings.md finding 5): M4.5 reaches 31 km, M5.0 reaches 78 km. So a phone within 31 km of its sensor is covered from M4.5 up, within 78 km only from M5.0 up, and beyond that not at all.",
+    "full_km": 31,
+    "partial_km": 78
+  },
+  "sensors": [
+    { "id": "bucaramanga-a", "name": "Bucaramanga", "lat": 7.1193, "lon": -73.1227, "public": false },
+    { "id": "chaparral", "name": "Chaparral", "lat": 3.7236, "lon": -75.4836, "public": true },
+    { "id": "quibdo", "name": "Quibdó", "lat": 5.6947, "lon": -76.6611, "public": true },
+    { "id": "hinatuan", "name": "Hinatuan (control, Filipinas)", "lat": 8.3667, "lon": 126.3333, "public": false }
+  ]
+}

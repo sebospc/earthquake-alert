@@ -1,0 +1,19 @@
+.DS_Store
+.gradle/
+**/build/
+local.properties
+evidence/
+gateway/.env
+gateway/gateway-evidence.jsonl
+ios-client/*.xcodeproj/
+xcuserdata/
+DerivedData/
+__pycache__/
+node_modules/
+*.apk
+*.pem
+*.p8
+.env
+gateway/heartbeats.json
+# holds the live ntfy topic; anyone who knows it can read or post alerts
+scripts/lab.config.json
