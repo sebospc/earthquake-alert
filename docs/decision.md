@@ -274,3 +274,17 @@ Candidates, ordered by expected gain (none measured):
 
 Ruled out: swap/zswap on the host (paging in from swap adds seconds right when the alert arrives), low-RAM/Go mode (requires modifying the image) and changing the Android version without revalidating AEA with a real quake.
 Note 2026-09-25: a 4 GB swapfile with vm.swappiness=1 is allowed as an emergency buffer only, because under memory pressure the alternative is the OOM killer taking a whole emulator. Swap in real use (> 100 MB for 10 min) pages and means over budget: the last canary emulator comes off.
+
+## 10. Compliance risk accepted for launch (user, 2026-09-25)
+
+The user accepts the compliance risk (Android SDK license, Google ToS, App Store 5.2.2 / 5.1.5)
+and will publish and see how it goes. It is no longer a launch blocker.
+
+Fallback if Google blocks or breaks the emulator path: move the receptors to physical Android
+phones (a device farm). The gateway, the listener and the certifier stay the same; only the
+receptor host changes. A farm also fixes the SDK-license part, not the ToS or Apple part.
+
+Early warning that the cutoff happened: the certifier. Expected catalog quakes with no alert on
+several receptors show up as MISS / "Google did not alert", and the repeated-explained-misses
+guard turns a quiet streak into DEGRADED. The general-santos canary makes that signal come weeks
+sooner than Colombia alone would.

@@ -28,6 +28,7 @@ jobs:
           node monitor/test_push_receiver.mjs
           bash scripts/e2e-relay.sh
           bash infra/deploy/test_remote.sh
+          bash infra/deploy/test_ssm_run.sh
       # Same Caddy as the host (Ubuntu 24.04 package). The package starts it on :80; the test
       # uses its own ports, so stop the service and run the binary.
       - name: caddy origin checks

@@ -31,6 +31,13 @@ for step in "$@"; do
   script+="bash \"\$d/t/infra/deploy/remote.sh\" ${step//BUNDLE/\"\$d\"}"$'\n'
 done
 
+# AWS-RunShellScript runs the commands with /bin/sh (dash on Ubuntu): no pipefail, no $'...'.
+# The script goes to bash as an argument, read from a quoted heredoc so sh expands nothing.
+# Not `bash <<X`: then bash reads its script from stdin, and a step that reads stdin (adb
+# shell) swallows the rest of it and bash still exits 0 (QA, 25-sep). </dev/null: a step that
+# reads stdin gets EOF at once instead of waiting on whatever the agent left open.
+script=$'bash -c "$(cat <<\'AEA_DEPLOY_SCRIPT\'\n'"$script"$'AEA_DEPLOY_SCRIPT\n)" </dev/null\n'
+
 command_id=$(aws ssm send-command --instance-ids "$instance_id" --document-name AWS-RunShellScript \
   --comment "deploy $commit" --timeout-seconds 60 \
   --parameters "$(jq -n --arg script "$script" '{commands: [$script], executionTimeout: ["1500"]}')" \
@@ -47,8 +54,11 @@ while [[ $status == Pending || $status == InProgress || $status == Delayed ]]; d
 done
 
 output=$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$instance_id" \
-  --query '[StandardOutputContent,StandardErrorContent]' --output text)
+  --query StandardOutputContent --output text)
+errors=$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$instance_id" \
+  --query StandardErrorContent --output text)
 echo "$output"
+[[ -z $errors || $errors == None ]] || { echo "--- stderr on the host:"; echo "$errors"; }
 [[ $status == Success ]] || { echo "::error::SSM status $status"; exit 1; }
 deploy_ok_count=$(grep -c '^DEPLOY_OK' <<<"$output" || true)
 ((deploy_ok_count == $#)) || { echo "::error::$deploy_ok_count of $# steps proved they landed"; exit 1; }

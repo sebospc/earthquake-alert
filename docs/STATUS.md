@@ -23,51 +23,22 @@ and, if the APK changed, `./aws-bootstrap.sh listener ~/listener.apk chaparral q
 
 ## In progress
 
-- **GPS always on** (GpsKeeperService). Installed ONLY on AWS quibdo since 18:04 UTC.
-  Moving the location without a reboot works and the location age stays in seconds.
-  Still to confirm over hours that `earthquake_alerting` deliveries keep arriving.
-  If it passes, it goes on chaparral and on the Mac.
-- Every 30 min the certifier measures, over read-only ssh, the GMS location age and the
-  deliveries to `earthquake_alerting` of each AWS receptor ("GMS location on the AWS receptors" section of the
-  certificate). 18:35 UTC: quibdo 38 s and 4 deliveries (growing); chaparral 4.5 h and 2.
-  The verdict uses it: DEGRADED if the GPS age is > 1 h with GpsKeeper, or > 20 h / none without it, and
-  if AEA's own location is > 21 h on any receptor (QA-90; 21 h = after the planned 20 h reboot had its chance).
-  The "deliveries flat 2 h" rule was wrong and is gone: AEA only gets a location on a move of ≥ 1 km.
-- Certifier, on disk and not loaded yet (next natural restart): DEGRADED if a real alert's listener → monitor
-  time goes over 2 s, with the emulator skew and the Mac NTP offset corrected (24-sep: 0.52 s). Origin in ms
-  from USGS when it has the quake; SGC and Google give whole seconds only.
-- Certifier, on disk, loads at next natural restart: Mac control retired at 19:11 UTC. Catalog-only
-  ground truth; an unexplained AWS miss is FAIL, labelled "Mac control retired", no Mac rows or downtime.
-  Guard: 3 explained misses on one receptor in 7 days with no hit in between = DEGRADED.
-- Certifier, live in pid 30920 since 23:33 UTC: live notice when a
-  receptor is uncovered ≥ 15 min (DEGRADED) / ≥ 60 min (FAIL), then RESTORED, as a macOS notification plus
-  monitor/data/live-alerts.jsonl (QA-92). Also: AEA's delivery remembered across a log roll, and rolled-back
-  deploys not excused.
-- Canaries decided (docs/siting-canaries.md): General Santos + Glan (pair, 32 km), La Serena, San Salvador,
-  ~5.7 alerts/month. Certifier pair rule on disk (`MONITOR_CANARY_PAIRS`), loads at next natural restart.
-- The Mac was rebooted at ~17:40 UTC to refresh the location. Without GpsKeeper it goes
-  blind again at ~24 h (QA-84).
-
-- **English migration (24-sep):** docs, comments, logs, test names and certificate template are now English; tests green. Alert text for Colombian users, the PWA UI and `docs/outreach/senadora-villalba.md` stay Spanish on purpose.
-  Certifier labels are now CERTIFIED/DEGRADED/FAIL on disk, and live since the restart (pid 71395, 19:33 UTC); listener APK changed (UI strings only), not deployed.
-
-- **devops (25-sep):** LIVE: CloudWatch (stacks `aea-lab-cloudwatch`, `aea-lab-alarms-i-0d1c0b6dd02e0ae61`; 5 alarms per host → SNS email: gateway down, receptor uncovered, location age > 21 h, AEA_NOT_OK x3 in 15 min, NUDGE_FAILED; ≈ $2/month) and HTTPS staging (stack `aea-lab-https`: EIP + CloudFront with secret origin header → Caddy allowlist; `infra/https/verify.sh` passes). Deploy role/bucket/instance profile from `aea-lab-deploy`. Not yet used: `deploy.yml` (needs the push), `deploy-apk.yml` (held by `APK_DEPLOY_ENABLED`). Trap: `aws-bootstrap.sh listener` maps serials by argument position and rewrites the whole sensor map: never run it for one receptor.
+- **Location freshness (QA-84/QA-90), settled design:** sensor-health reads AEA's own location age (GMS event log, remembered across log rolls), reboots at > 20 h, and on GpsKeeper receptors nudges 2 km out and back at > 6 h. Proven on quibdo 25-sep 05:30–05:40. quibdo has GpsKeeper; chaparral gets it with the next APK rollout, until then it relies on the 20 h reboot.
+- **Certifier** (pid 30920 since 23:33 UTC): catalog-only ground truth (Mac retired), AEA age > 21 h = DEGRADED, live notice when a receptor is uncovered ≥ 15 min (DEGRADED) / ≥ 60 min (FAIL). On disk for the next restart: latency > 2 s rule, tunnel retry, lone-canary support (MONITOR_CANARIES).
+- **devops (25-sep):** LIVE: CloudWatch (stacks `aea-lab-cloudwatch`, `aea-lab-alarms-i-0d1c0b6dd02e0ae61`; 5 alarms per host → SNS email: gateway down, receptor uncovered, location age > 21 h, AEA_NOT_OK x3 in 15 min, NUDGE_FAILED; ≈ $2/month) and HTTPS staging (stack `aea-lab-https`: EIP + CloudFront with secret origin header → Caddy allowlist; `infra/https/verify.sh` passes). Deploy role/bucket/instance profile from `aea-lab-deploy`. Not yet working: `deploy.yml` (needs the stack update), `deploy-apk.yml` (held by `APK_DEPLOY_ENABLED`). `aws-bootstrap.sh listener` now takes explicit `emulator-NNNN=id` pairs and merges the map.
 
 ## Open
 
-- **Canaries (user, 25-sep):** $0 plan approved: general-santos + glan (pair) as emulators 3-4 on the main host, after a green CI APK and a CPU check. Dedicated canary hosts (La Serena, San Salvador too, ~$66/month) later, when there is money.
+- **First pipeline deploy:** blocked until the user updates the aea-lab-deploy stack (OIDC trust with the immutable subject), then re-runs deploy 36094274491 (7534fa9) and approves. After it lands, devops runs, one step at a time: swap.sh → probe install → host-alarms (7 alarms) → general-santos as emulator 3 (then STATUS deploy line EMULATOR_COUNT=3, certifier MONITOR_CANARIES=general-santos).
+- **APK rollout** (pipeline, one receptor at a time, key switch to the CI key): chaparral gets GpsKeeper, quibdo the latest APK. Held until the first deploy works.
+- **Canaries:** general-santos alone for now (4 emulators don't fit in 15.7 GB). glan, La Serena, San Salvador wait for dedicated hosts (~$33/month each) when there is money.
+- **QA-67:** EC2 CPU during an event, measured at the next quake.
+- **Native iOS app (AlarmKit):** later, after Xcode, the Apple Developer account and the developer-ios agent.
+- **Custom domain:** optional and cosmetic. Staging HTTPS works at https://d1o3i68tksfjqi.cloudfront.net; the user buys a domain when ready.
+- **Auto receptor growth:** built, propose-only (AUTO_RECEPTOR_BUDGET_USD=0) until the user sets a cap.
+- **Extreme optimization (decision.md §9):** only when everything is stable.
 
-- **24-sep 23:10–23:25 (EC2 clock):** sensor-health with QA-90 steps 1+2 deployed (checksum ok), then the aea_ok fix at 23:25. quibdo was falsely uncovered 21:15→23:25 (aea_ok's deliveries>0 reads the event log GpsKeeper rolls over); rebooted by the coordinator at 23:23; covered again 23:25. Open: the nudge falsely confirmed a leg across that reboot (developer fixing).
-
-- **QA-90 (critical, 24-sep 19:40):** earthquake_alerting only gets a location on a ≥1 km move. GpsKeeper keeps the GPS provider fresh, but AEA's copy ages (quibdo: last delivery 18:11 UTC), and sensor-health's 20 h reboot reads the GPS provider, so it never fires on quibdo. In progress: AEA location age drives aea_ok and the reboot (deadline 25-sep 17:00 UTC), plus a 1.1 km nudge-and-return. Fallback: manual reboot of quibdo before 25-sep 18:00 UTC. "Deliveries flat" is NOT a fault signal.
-
-- Pending deploy (after QA review; APK only after the quibdo GpsKeeper measurement): latency timestamps (gateway received_at/sent_at, listener request_written_at_ms + streaming mode, sensor-health CLOCK_OFFSET) and BootReceiver MY_PACKAGE_REPLACED. After `install -r` on a guest, with no reboot: `dumpsys activity services com.earthquakes.relay | grep GpsKeeper` must show it running, and no GPS_KEEPER_FAILED in evidence.
-
-- Domain with HTTPS: waiting for the user's decision (DuckDNS or other).
-- Retire the Mac fleet or keep it as control: user's decision.
-- QA-67: EC2 CPU during an event, measured at the next quake.
-- Native iOS app (AlarmKit): after Xcode, the Apple Developer account and the developer-ios agent.
-- Extreme optimization (decision.md §9): only when everything is stable.
+Closed on 24/25-sep: Mac fleet retired (19:11 UTC); QA-90 (AEA location age + nudge, proven 25-sep 05:30–05:40 on quibdo); false uncovered on quibdo 21:15–23:25 fixed; outreach emails dropped.
 
 ## Known traps (do not re-investigate)
 
@@ -82,7 +53,7 @@ and, if the APK changed, `./aws-bootstrap.sh listener ~/listener.apk chaparral q
 ## Handoff per role (before a compact: each one leaves here where it stopped, 2-3 lines)
 
 - **coordinator:** CLAUDE.md, STATUS.md and docs/roles/* created. Measuring GpsKeeper on AWS quibdo (installed 18:04 UTC): still to confirm over hours the earthquake_alerting deliveries. If it passes, install it on chaparral (AWS) and on the Mac. Decisions waiting for the user: HTTPS domain, retire or keep the Mac, local git init.
-- **developer:** nothing half done. gateway 55/55, test_sensor_health 9/9, JUnit and APK green. Last change: GpsKeeperService (process `:gps`) + geo fix on every sensor-health run. Waiting for the earthquake_alerting measurement. Traps not in any other doc: `Map.groupBy` does not exist in Node 18; `node -e` breaks when importing server.js (the main check uses argv[1]), so a .mjs is used. Script tests must never let the real `lab.adb` through, because on the Mac emulator-5554 is the live fleet.
-- **developer-qa:** certifier pid 30920 since 23:33 UTC, all rules loaded (clocks, Mac retired 19:11, canary pairs, AEA age 21 h, live coverage notices QA-92); stop with `kill 30920`. QA-90 critical: sensor-health reboot must use AEA's location age; if developer's step 1 is not live by 25-sep 16:00 UTC, tell the coordinator (manual quibdo reboot before 18:00). Pending reviews: developer's AEA age + 1.1 km nudge. Tests: gateway 62/62, test_verify 23, test_sensor_health 16, test_receptor_placement PASS. Waiting for the next restart: canaries certified (capped at DEGRADED) and the tunnel retry. Decided: one canary, general-santos (emulator 3); glan waits for its own host. When it is live: restart the certifier with MONITOR_CANARIES=general-santos (pairs stay empty), then fill the "after" column in docs/qa/load.md at ≥ 8 h after its boot.
+- **developer:** nothing half done. All green: gateway 63/63, test_sensor_health, test_receptor_placement, test_bootstrap_listener, JUnit + APK. QA-approved and waiting for the coordinator's deploy: demand-driven siting (`demand_cell` on /devices, `scripts/receptor-placement.py` + daily timer, budget default 0), canaries general-santos/glan (public:false), /subscribe public-only for users. APK (latency stamps, MY_PACKAGE_REPLACED) waits for its own deploy. Open follow-ups: `new_receptor` push and sensors.json reload without restart (not built). Traps: gradle needs `JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk-17.jdk/Contents/Home`; `Map.groupBy` does not exist in Node 18; `node -e` breaks importing server.js, use a .mjs; script tests must never reach the real `lab.adb`.
+- **developer-qa:** certifier pid 30920 (manual, `kill 30920`; restart = kill + `nohup python3 monitor/monitor.py run`, tell the coordinator first). On disk, loads at the next restart: tunnel retry before blaming the gateway, canaries certified and capped at DEGRADED (MONITOR_CANARIES). When general-santos runs: restart with MONITOR_CANARIES=general-santos, then the "after" column in docs/qa/load.md at >= 8 h after its boot. devops' ssm-run.sh stdin fix reviewed and approved 25-sep (test_ssm_run.sh 2/2 under dash; both mutations caught). Open QA: QA-67, QA-90b, QA-93. Tests: gateway 63/63, test_verify 24, test_sensor_health 16, test_remote 13, placement PASS.
 - **devops-earthquake:** CloudWatch and HTTPS live and verified (25-sep 00:25Z). CI/deploy workflows wait for the push; first gateway deploy should log seconds-to-covered (QA: < 90 s → cut the 7 min cap to 3). APK deploy on hold (`APK_DEPLOY_ENABLED`).
 - **comunicacion-humano** (session closed): outreach dropped by the user on 2026-09-24. Drafts stay in docs/outreach/ as history; nothing is sent.
