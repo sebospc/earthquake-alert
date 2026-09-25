@@ -2,7 +2,7 @@ import Foundation
 import XCTest
 @testable import RelayCore
 
-/// DevicesClient against the real gateway (gateway/src/server.js, APNs dry run) to catch
+/// GatewayClient against the real gateway (gateway/src/server.js, APNs dry run) to catch
 /// contract drift the fake cannot see. Needs `node` on PATH and `npm install` done in gateway/.
 final class GatewayContractTests: XCTestCase {
     static let gatewayDirectory = URL(filePath: #filePath)
@@ -10,7 +10,7 @@ final class GatewayContractTests: XCTestCase {
 
     var gateway: Process!
     var dataDirectory: URL!
-    var client: DevicesClient!
+    var client: GatewayClient!
     let token = Data((0..<32).map { UInt8($0) })
 
     override func setUp() async throws {
@@ -39,7 +39,7 @@ final class GatewayContractTests: XCTestCase {
         try gateway.run()
 
         let baseURL = URL(string: "http://127.0.0.1:\(port)")!
-        client = DevicesClient(baseURL: baseURL, apnsEnvironment: .sandbox)
+        client = GatewayClient(baseURL: baseURL, apnsEnvironment: .sandbox)
         try await waitUntilAnswering(baseURL.appending(path: "status"))
     }
 
@@ -63,6 +63,12 @@ final class GatewayContractTests: XCTestCase {
         try await client.unsubscribe(deviceToken: token)
         XCTAssertFalse(try storedDevices().contains(token.hexString))
         try await client.unsubscribe(deviceToken: token) // repeatable: 204 again
+    }
+
+    func testStatusListsEveryPublicReceptorAndNoneIsCoveredOnAFreshGateway() async throws {
+        let coverage = try await client.status()
+        XCTAssertEqual(coverage["chaparral"], false, "no heartbeat yet: must not read as covered")
+        XCTAssertEqual(coverage["quibdo"], false)
     }
 
     func testNonPublicReceptorIsRejectedWithTheServerMessage() async {

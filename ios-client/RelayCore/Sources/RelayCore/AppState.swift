@@ -31,7 +31,7 @@ public enum Registration: Equatable, Sendable {
 extension AppState {
     /// The only place that decides the screen. Anything unknown or broken ends in `.error`,
     /// never in a green state: a silent failure is worse than a loud one.
-    /// - Parameter receptorCoverage: `covered_apns` per receptor from GET /status, nil when it did not answer.
+    /// - Parameter receptorCoverage: from `CoverageTracker`: nil when /status has not answered within the grace.
     public static func derive(
         permission: Permission,
         registration: Registration,
@@ -54,7 +54,6 @@ extension AppState {
         case .outsideCoverage:
             return .notCovered
         case .receptors(let sensorIDs):
-            // ponytail: /status down = red at once. Contract allows a 5 min grace for gateway restarts; add it with the refresh loop.
             guard let receptorCoverage else { return .error(.serviceUnreachable) }
             let coveringCount = sensorIDs.filter { receptorCoverage[$0] == true }.count
             return coveringCount == 0 ? .error(.receptorsDown) : .covered(receptors: coveringCount)

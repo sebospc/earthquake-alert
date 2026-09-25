@@ -1,7 +1,7 @@
 import Foundation
 
-/// POST and DELETE /devices, per docs/ios-contract.md.
-public struct DevicesClient: Sendable {
+/// POST and DELETE /devices, GET /status, per docs/ios-contract.md.
+public struct GatewayClient: Sendable {
     public enum APNsEnvironment: String, Sendable { case production, sandbox }
 
     public enum Subscription: Equatable, Sendable {
@@ -23,6 +23,9 @@ public struct DevicesClient: Sendable {
         /// 429, 5xx or no network: retry with backoff, show "not registered" meanwhile.
         case retryLater
     }
+
+    /// `covered_apns` per receptor. Kill switch, stale listener and APNs outages are already folded in by the server.
+    public typealias ReceptorCoverage = [String: Bool]
 
     let baseURL: URL
     let apnsEnvironment: APNsEnvironment
@@ -51,6 +54,46 @@ public struct DevicesClient: Sendable {
     /// Safe to repeat: the server answers 204 whether the token exists or not.
     public func unsubscribe(deviceToken: Data) async throws(Failure) {
         _ = try await send("DELETE", RequestBody(deviceToken: deviceToken.hexString))
+    }
+
+    public func status() async throws(Failure) -> ReceptorCoverage {
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(from: baseURL.appending(path: "status"))
+        } catch {
+            throw .retryLater
+        }
+        guard (response as? HTTPURLResponse)?.statusCode == 200,
+              let status = try? JSONDecoder().decode(StatusBody.self, from: data)
+        else { throw .retryLater }
+        return Dictionary(status.sensors.map { ($0.id, $0.coveredAPNs) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// Emits the coverage to show every `interval` while the app is open, grace included (see `CoverageTracker`).
+    /// ponytail: fixed interval while open; the background/push-driven refresh comes with the notification decision.
+    public func watchCoverage(every interval: Duration = .seconds(60)) -> AsyncStream<ReceptorCoverage?> {
+        AsyncStream { continuation in
+            let polling = Task {
+                var tracker = CoverageTracker()
+                while !Task.isCancelled {
+                    if let answer = try? await status() { tracker.record(answer, at: .now) }
+                    continuation.yield(tracker.coverage(at: .now))
+                    try? await Task.sleep(for: interval)
+                }
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in polling.cancel() }
+        }
+    }
+
+    private struct StatusBody: Decodable {
+        struct Sensor: Decodable {
+            let id: String
+            let coveredAPNs: Bool
+            enum CodingKeys: String, CodingKey { case id, coveredAPNs = "covered_apns" }
+        }
+        let sensors: [Sensor]
     }
 
     private func send(_ method: String, _ body: RequestBody) async throws(Failure) -> Data {

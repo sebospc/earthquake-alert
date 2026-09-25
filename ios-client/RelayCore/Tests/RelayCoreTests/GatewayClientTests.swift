@@ -50,9 +50,9 @@ final class FakeGateway: URLProtocol {
     }
 }
 
-final class DevicesClientTests: XCTestCase {
+final class GatewayClientTests: XCTestCase {
     let token = Data([0xAB, 0x01] + Array(repeating: 0x00, count: 30))
-    lazy var client = DevicesClient(
+    lazy var client = GatewayClient(
         baseURL: URL(string: "https://gateway.test")!, apnsEnvironment: .sandbox, session: FakeGateway.session)
 
     func testSubscribeToReceptorsSendsContractBody() async throws {
@@ -110,12 +110,60 @@ final class DevicesClientTests: XCTestCase {
         await assertFailure(.rejected("unreadable 201 body"))
     }
 
-    private func assertFailure(_ expected: DevicesClient.Failure, line: UInt = #line) async {
+    private func assertFailure(_ expected: GatewayClient.Failure, line: UInt = #line) async {
         do {
             _ = try await client.subscribe(deviceToken: token, to: .receptors(["chaparral"]))
             XCTFail("expected \(expected)", line: line)
         } catch {
             XCTAssertEqual(error, expected, line: line)
+        }
+    }
+}
+
+final class GatewayStatusTests: XCTestCase {
+    let client = GatewayClient(
+        baseURL: URL(string: "https://gateway.test")!, apnsEnvironment: .sandbox, session: FakeGateway.session)
+
+    func testStatusReadsCoveredAPNsPerReceptor() async throws {
+        FakeGateway.respond = { request, _ in
+            XCTAssertEqual(request.url?.path, "/status")
+            return (200, #"{"now":"x","relay_enabled":true,"sensors":[{"id":"chaparral","covered":false,"covered_apns":true},{"id":"quibdo","covered":true,"covered_apns":false}]}"#)
+        }
+        let coverage = try await client.status()
+        XCTAssertEqual(coverage, ["chaparral": true, "quibdo": false], "APNs channel, not the web push one")
+    }
+
+    func testStatusErrorOrGarbageIsRetryable() async {
+        for (status, body) in [(502, ""), (200, "<html>captive portal</html>")] {
+            FakeGateway.respond = { _, _ in (status, body) }
+            do {
+                _ = try await client.status()
+                XCTFail("\(status) \(body) must not read as coverage")
+            } catch {
+                XCTAssertEqual(error, .retryLater)
+            }
+        }
+    }
+
+    func testWatchCoverageKeepsTheLastAnswerWhenTheGatewayDropsWithinGrace() async {
+        nonisolated(unsafe) var calls = 0
+        FakeGateway.respond = { _, _ in
+            calls += 1
+            return calls == 1 ? (200, #"{"sensors":[{"id":"chaparral","covered_apns":true}]}"#) : (503, "")
+        }
+        var emitted: [GatewayClient.ReceptorCoverage?] = []
+        for await coverage in client.watchCoverage(every: .milliseconds(10)) {
+            emitted.append(coverage)
+            if emitted.count == 3 { break }
+        }
+        XCTAssertEqual(emitted, [["chaparral": true], ["chaparral": true], ["chaparral": true]])
+    }
+
+    func testWatchCoverageIsUnknownUntilTheFirstAnswer() async {
+        FakeGateway.respond = { _, _ in throw URLError(.cannotConnectToHost) }
+        for await coverage in client.watchCoverage(every: .milliseconds(10)) {
+            XCTAssertNil(coverage)
+            break
         }
     }
 }
