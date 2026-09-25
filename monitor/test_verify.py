@@ -472,3 +472,41 @@ findings, _ = verify.classify([offshore], [], [alone], both_up, offshore["time"]
 assert findings[0]["cause"] == f"{verify.UNEXPLAINED}; {verify.NO_CONTROL}", findings[0]["cause"]
 assert verify.verdict(findings, [], {}, {"sent": 0}, [], 1.0, (), (), monitor.CANARIES)[0] == "DEGRADED"
 print("PASS a lone canary is certified from MONITOR_CANARIES, catalog rules, capped at DEGRADED")
+
+# The AWS receptor list comes from the host's sensor map, not from code: a receptor added there is
+# polled with no change here, its key never leaves the host, and an unreadable map is loud.
+import subprocess  # noqa: E402
+import tempfile  # noqa: E402
+with tempfile.TemporaryDirectory() as host:
+    bin_dir = os.path.join(host, "bin")
+    os.mkdir(bin_dir)
+    with open(os.path.join(bin_dir, "sudo"), "w") as fake_sudo:  # `sudo -u aea -H <adb> ...` runs the fake adb
+        fake_sudo.write('#!/bin/sh\nif [ "$1" = -u ]; then shift 4; exec adb "$@"; fi\nexec "$@"\n')
+    with open(os.path.join(bin_dir, "adb"), "w") as fake_adb:
+        fake_adb.write('#!/bin/sh\ncat >/dev/null\ncase "$4" in cat) echo "3600.0 1.0";; esac\n')
+    for name in ("sudo", "adb"):
+        os.chmod(os.path.join(bin_dir, name), 0o755)
+    monitor.AWS_SENSOR_MAP = os.path.join(host, "earthquake-sensors.map")
+    with open(monitor.AWS_SENSOR_MAP, "w") as sensor_map:
+        sensor_map.write("emulator-5554 chaparral 3.72 -75.48 KEY-ONE\n"
+                         "emulator-5560 brand-new-site 6.11 125.17 KEY-TWO\n")
+
+    def run_on_host():
+        return subprocess.run(["bash", "-c", monitor.remote_location_script()], capture_output=True, text=True,
+                              stdin=subprocess.DEVNULL, env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"},
+                              timeout=30).stdout
+
+    out = run_on_host()
+    assert [(serial, sensor) for serial, sensor, _ in monitor.location_chunks(out)] == [
+        ("emulator-5554", "chaparral"), ("emulator-5560", "brand-new-site")], out
+    assert "KEY-" not in out, "a sensor key left the host"
+    monitor.AWS_SERIALS_OVERRIDE = "emulator-5556:quibdo"
+    assert [sensor for _, sensor, _ in monitor.location_chunks(run_on_host())] == ["quibdo"]
+    monitor.AWS_SERIALS_OVERRIDE = ""
+    os.remove(monitor.AWS_SENSOR_MAP)
+    try:
+        list(monitor.location_chunks(run_on_host()))
+        raise AssertionError("an unreadable sensor map polled nothing, silently")
+    except RuntimeError:
+        pass
+print("PASS AWS receptors come from the host's sensor map: a new id is polled, keys stay, no map is loud")

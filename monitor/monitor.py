@@ -447,26 +447,50 @@ def poll_control():
                                  "age_s": verify.location_age_s(dump, float(uptime.split()[0]))})
 
 
-# Which emulator is which receptor on the EC2 (the map there is 0600 and holds keys).
-AWS_SERIALS = dict(item.split(":") for item in os.environ.get(
-    "MONITOR_AWS_SERIALS", "emulator-5554:chaparral,emulator-5556:quibdo").split(","))
+# Which emulator is which receptor on the EC2. Read on every poll from the host's sensor map, the
+# same file sensor-health and the probe use, so a new receptor is polled with no change here. The
+# map is 0600 and holds keys: only its first two fields ever leave the host. The env var overrides.
+AWS_SENSOR_MAP = "/etc/earthquake-sensors.map"
+AWS_SERIALS_OVERRIDE = os.environ.get("MONITOR_AWS_SERIALS", "")  # "emulator-5554:chaparral,..."
 # Receptors running GpsKeeperService: held to the 1 h / 2 h rule instead of the ~24 h one.
 # Canary pairs that control each other, "a:b,c:d" (docs/siting-canaries.md). Empty until provisioned.
 CANARY_PAIRS = [pair.split(":") for pair in os.environ.get("MONITOR_CANARY_PAIRS", "").split(",") if pair]
 # Every canary, paired or alone ("general-santos"): not public, certified, never worse than DEGRADED.
 # Empty until they are live: a listed canary that is not running reads as uncovered.
-CANARIES = set(filter(None, os.environ.get("MONITOR_CANARIES", "").split(","))) \
+CANARIES = set(filter(None, os.environ.get("MONITOR_CANARIES", "general-santos").split(","))) \
     | {sensor_id for pair in CANARY_PAIRS for sensor_id in pair}
-GPSKEEPER = set(filter(None, os.environ.get("MONITOR_GPSKEEPER", "quibdo").split(",")))
+GPSKEEPER = set(filter(None, os.environ.get("MONITOR_GPSKEEPER", "quibdo,general-santos").split(",")))
 # Read-only: uptime, the GPS line of dumpsys location, and earthquake_alerting's total.
 REMOTE_LOCATION_SCRIPT = """A="sudo -u aea -H /opt/android-sdk/platform-tools/adb"
-for s in {serials}; do
-  echo "== $s"; $A -s $s shell cat /proc/uptime
+receptors=$({receptors}) && [ -n "$receptors" ] || {{ echo MAP_UNREADABLE; exit 3; }}
+set -- $receptors
+while [ $# -ge 2 ]; do
+  s=$1 id=$2; shift 2
+  echo "== $s $id"; $A -s $s shell cat /proc/uptime
   $A -s $s shell dumpsys location | grep -m1 "last location=Location\\[gps"
   $A -s $s shell dumpsys activity service com.google.android.gms | grep -E "earthquake_alerting\\]: total|delivered locations.*\\[earthquake_alerting\\]"
   echo "guest_now $($A -s $s shell date +%Y-%m-%dT%H:%M:%S | tr -d '\\r')"
   echo "clock $(date +%s.%N) $($A -s $s shell date +%s.%N | tr -d '\\r') $(date +%s.%N)"
 done"""
+
+
+def remote_location_script():
+    if AWS_SERIALS_OVERRIDE:
+        receptors = "echo " + " ".join(item.replace(":", " ") for item in AWS_SERIALS_OVERRIDE.split(","))
+    else:
+        receptors = f"sudo awk 'NF >= 2 {{print $1, $2}}' {AWS_SENSOR_MAP}"
+    return REMOTE_LOCATION_SCRIPT.format(receptors=receptors)
+
+
+def location_chunks(out):
+    """(serial, sensor id, dump) per receptor. An unreadable map raises: polling nothing would look
+    like a fleet with no location problems."""
+    if "MAP_UNREADABLE" in out or "== " not in out:
+        raise RuntimeError("AWS location poll: the host's sensor map could not be read, no receptor was checked")
+    for chunk in out.split("== ")[1:]:
+        header, _, rest = chunk.partition("\n")
+        serial, sensor = header.split()
+        yield serial, sensor, rest
 
 
 def poll_aws_location():
@@ -477,23 +501,26 @@ def poll_aws_location():
         return
     out = subprocess.run(["ssh", "-i", SSH_KEY, "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new",
                           "-o", f"UserKnownHostsFile={path('known_hosts')}", f"ubuntu@{ip}",
-                          REMOTE_LOCATION_SCRIPT.format(serials=" ".join(AWS_SERIALS))],
+                          remote_location_script()],
                          capture_output=True, text=True, timeout=180).stdout
     history = read_jsonl(path("aws-location.jsonl"))
-    for chunk in out.split("== ")[1:]:
-        serial, _, rest = chunk.partition("\n")
+    try:
+        chunks = list(location_chunks(out))
+    except RuntimeError as error:
+        notify(str(error))
+        raise
+    for serial, sensor, rest in chunks:
         lines = rest.splitlines()
         try:
             uptime = float(lines[0].split()[0])
         except (IndexError, ValueError):
             uptime = None
-        sensor = AWS_SERIALS.get(serial.strip(), serial.strip())
         previous = next((r.get("alert_delivery_at") for r in reversed(history) if r["sensor"] == sensor
                          and r.get("alert_delivery_at") is not None), None)
         age = verify.remembered_alert_age_s(verify.last_alerting_delivery_age_s(rest, guest_now(rest)),
                                             previous, now(), uptime)
         append("aws-location.jsonl", {
-            "at": now(), "sensor": AWS_SERIALS.get(serial.strip(), serial.strip()),
+            "at": now(), "sensor": sensor,
             "age_s": verify.location_age_s(rest, uptime) if uptime is not None else None,
             "deliveries": verify.alerting_deliveries(rest), "uptime_s": uptime,
             "skew_s": verify.emulator_skew_s(rest),
