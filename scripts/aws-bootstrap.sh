@@ -375,7 +375,9 @@ fi
 echo "== host checks"
 mkdir -p "$TOOLS_DIR"
 # lab.py comes along because sensor-health.py reuses its AEA checks.
-install -m 755 "$SCRIPTS_SRC/lab.py" "$SCRIPTS_SRC/sensor-health.py" "$SCRIPTS_SRC/aea-geofix.py" "$TOOLS_DIR/"
+install -m 755 "$SCRIPTS_SRC/lab.py" "$SCRIPTS_SRC/sensor-health.py" "$SCRIPTS_SRC/aea-geofix.py" \
+  "$SCRIPTS_SRC/receptor-placement.py" "$TOOLS_DIR/"
+install -m 644 "$SCRIPTS_SRC/aea-alerts-colombia.json" "$TOOLS_DIR/"
 
 # Play Services reads the GPS once, minutes into each boot, and keeps that place. This feeds
 # the assigned one during every boot (start, crash, guest reboot, spot restart). A fix sent
@@ -416,6 +418,30 @@ Description=AEA health every 5 minutes
 
 [Timer]
 OnCalendar=*:0/5
+
+[Install]
+WantedBy=timers.target
+EOF
+
+# Proposes receptors where phones have no coverage (docs/siting-pilot.md). It never creates
+# one: AUTO_RECEPTOR_BUDGET_USD defaults to 0, and at 0 every proposal is a proposal only.
+cat > /etc/systemd/system/receptor-placement.service <<EOF
+[Unit]
+Description=Propose new receptors from demand and hazard
+
+[Service]
+Type=oneshot
+User=$GATEWAY_USER
+Environment=AUTO_RECEPTOR_BUDGET_USD=${AUTO_RECEPTOR_BUDGET_USD:-0}
+ExecStart=/usr/bin/python3 $TOOLS_DIR/receptor-placement.py $GATEWAY_DATA/devices.json $GATEWAY_DIR/public/sensors.json $TOOLS_DIR/aea-alerts-colombia.json $GATEWAY_DATA/receptor-proposals.json
+EOF
+cat > /etc/systemd/system/receptor-placement.timer <<EOF
+[Unit]
+Description=Receptor proposals once a day
+
+[Timer]
+OnCalendar=*-*-* 06:00:00
+Persistent=true
 
 [Install]
 WantedBy=timers.target
@@ -520,7 +546,7 @@ chown "$GATEWAY_USER:" "$evidence_file"
 chmod 600 "$evidence_file"
 # Restart, not start: a rerun has to pick up new gateway code.
 systemctl restart earthquake-gateway.service
-systemctl enable --now sensor-health.timer gateway-watchdog.timer
+systemctl enable --now sensor-health.timer gateway-watchdog.timer receptor-placement.timer
 # restart, not start: a rerun has to pick up a new aea-geofix.py.
 systemctl enable aea-geofix.service
 systemctl restart aea-geofix.service

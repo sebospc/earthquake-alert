@@ -445,3 +445,16 @@ monitor.ensure_tunnel = lambda: (False, "ssh")
 assert monitor.poll_health()["error"] == "ssh"
 assert len(written) == 3, "one health line per poll"
 print("PASS a dead tunnel is rebuilt once before the gateway is called down")
+
+# The $0 plan: general-santos and glan share the Colombia host. A host outage takes both canaries down.
+pair_down = lambda kind, receiver_id, t: False
+findings, _ = verify.classify([offshore], [], [gsantos, glan], pair_down, offshore["time"] + 7200)
+assert {(f["receiver"], f["cause"]) for f in findings} == {("general-santos", verify.DOWN), ("glan", verify.DOWN)}
+CANARIES = {"general-santos", "glan"}
+decision, reasons = verify.verdict(findings, [], {}, {"sent": 0}, [], 1.0, (), (), CANARIES)
+assert decision == "DEGRADED" and all(r.startswith("MISS on canary") for r in reasons), (decision, reasons)
+assert verify.verdict(findings, [], {}, {"sent": 0}, [], 1.0)[0] == "FAIL", "a user-facing receptor down stays FAIL"
+long_gap = {"glan": {"uncovered_min": 90, "longest_gap_min": 90}}
+assert verify.verdict([], [], long_gap, {"sent": 0}, [], 1.0, (), (), CANARIES)[0] == "DEGRADED"
+assert verify.verdict([], [], long_gap, {"sent": 0}, [], 1.0)[0] == "FAIL"
+print("PASS canaries never FAIL: a lost signal, not a lost warning (both down at once included)")

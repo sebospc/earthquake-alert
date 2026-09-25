@@ -180,9 +180,11 @@ def call(method, path_with_query, payload=None, signed=False, timeout=15):
         return json.loads(text) if text else None
 
 
-def public_sensors():
+def certified_sensors():
+    """Public receptors, plus the canaries (MONITOR_CANARY_PAIRS): not public, followed only by us."""
+    canaries = {sensor_id for pair in CANARY_PAIRS for sensor_id in pair}
     sensors = call("GET", "/sensors.json")["sensors"]
-    return [s for s in sensors if s.get("public") is True]
+    return [s for s in sensors if s.get("public") is True or s["id"] in canaries]
 
 
 def poll_health():
@@ -548,7 +550,8 @@ def certificate(day, state, sensors):
     location = [r for r in read_jsonl(path("aws-location.jsonl")) if start <= r["at"] < end]
     decision, reasons = verify.verdict(findings, unexplained, coverage, probes, delays,
                                        min(1.0, completeness), verify.location_problems(location, GPSKEEPER) + repeated,
-                                       [(c["event_id"], c["our_part"]) for c in alerts])
+                                       [(c["event_id"], c["our_part"]) for c in alerts],
+                                       {sensor_id for pair in CANARY_PAIRS for sensor_id in pair})
     return render(day, decision, reasons, coverage, probes, findings, unexplained, alerts, completeness, horizon < end,
                   restarts, manual)
 
@@ -675,7 +678,7 @@ def step(state, force=False):
     if "error" in record:
         print(f"{iso(record['at'])} health: {record['error']}")
         return
-    sensors = public_sensors()
+    sensors = certified_sensors()
     sensor_ids = [s["id"] for s in sensors]
     # ponytail: rereads health.jsonl every minute (~1.4k lines/day); keep the tail if it grows slow.
     notices, state["uncovered"] = verify.live_coverage_notices(
@@ -722,7 +725,7 @@ def main():
     if command == "cert":
         ensure_tunnel()
         day = sys.argv[2] if len(sys.argv) > 2 else datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        print(write_certificate(day, state, public_sensors()))
+        print(write_certificate(day, state, certified_sensors()))
         return
     if command == "once":
         step(state, force=True)

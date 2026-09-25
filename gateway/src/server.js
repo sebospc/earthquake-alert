@@ -1064,7 +1064,8 @@ export function createServer(config) {
       sendJson(response, 503, { error: "web push not configured" });
       return;
     }
-    const { sensorId, subscription } = validateSubscription(body, sensorIds);
+    // Users only follow public receptors; the certifier also follows canaries and controls.
+    const { sensorId, subscription } = validateSubscription(body, monitor ? sensorIds : publicSensorIds);
     await subscriptions.add(sensorId, monitor ? { ...subscription, monitor: true } : subscription);
     sendJson(response, 201, { sensor_id: sensorId });
   }

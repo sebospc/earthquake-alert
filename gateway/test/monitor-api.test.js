@@ -275,3 +275,16 @@ test("QA-79 a public sensor that never reported is flagged once, and only that o
   assert.deepEqual(silent.map(record => record.sensor_id), ["quibdo"],
     "missed the silent one, flagged a reporting or non-public one, or repeated it every check");
 });
+
+test("web users subscribe to public receptors only; the monitor also to canaries", async t => {
+  mockPushService(t);
+  const { port } = await startGateway(t, {
+    sensors: [{ id: "chaparral", public: true }, { id: "glan", public: false }]
+  });
+  const user = await request(port, "POST", "/subscribe", JSON.stringify(subscription(USER_ENDPOINT, "glan")));
+  assert.equal(user.status, 400, "a user followed a canary");
+  assert.equal((await request(port, "POST", "/subscribe",
+    JSON.stringify(subscription(USER_ENDPOINT, "chaparral")))).status, 201);
+  assert.equal((await signed(port, "POST", "/subscribe",
+    subscription(MONITOR_ENDPOINT, "glan", { monitor: true }))).status, 201);
+});

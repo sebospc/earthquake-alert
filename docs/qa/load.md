@@ -195,3 +195,26 @@ Missing timestamps, in order of value:
 3. Emulator clock offset reported with every health run (QA-86: `sensor-health` can do the adb `date` vs host check above in 20 ms). Every hop that crosses the emulator depends on it.
 4. Monitor: record the Mac's NTP offset with each received push (developer-qa, monitor code).
 5. Origin: Google gives whole seconds. For origin → posted use the SGC/USGS origin with milliseconds.
+
+## Canaries on the Colombia host: contention baseline (before)
+
+Plan ($0): the canaries general-santos and glan run as emulators 3 and 4 on the same r8i.large
+(2 vCPU) as chaparral and quibdo. There is no synthetic alert, so the "before and after" compares what
+CPU contention would show on the alert path. Read-only, 2026-09-25 00:31 UTC, 2 emulators running:
+
+| measure | before (2 emulators) | after (4 emulators) |
+|---|---|---|
+| host load average (1/5/15 min) | 0.24 / 0.23 / 0.19 | |
+| host CPU (vmstat, 5 s samples) | us 2–10 %, idle 82–92 %, steal 0 | |
+| host memory used / available | 7.6 GB / 8.1 GB | |
+| busiest emulator (top) | 10 % of a vCPU | |
+| adb shell round trip, p50 of 5 (chaparral / quibdo) | 13 ms / 14 ms | |
+| full GMS dumpsys (chaparral / quibdo) | 0.20 s / 0.12 s | |
+| certifier probe, monitor → gateway → push → monitor, 24 h (n=10) | p50 0.67 s, p95 0.76 s | |
+| real alert, listener → monitor corrected (24-sep, one sample) | 0.52 s | |
+
+What would say the canaries hurt Colombia: steal > 0 or idle < 50 % in steady state, an adb round
+trip over ~50 ms, a GMS dump over 1 s, or a real alert's listener → monitor over the certifier's 2 s
+rule (which then turns the day DEGRADED on its own). Boot is the known weak point: 2 vCPU cannot boot
+2 emulators at once (STATUS, known traps), so the canaries must boot one at a time, never alongside
+a Colombia receptor.

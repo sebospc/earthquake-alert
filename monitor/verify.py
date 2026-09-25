@@ -205,20 +205,27 @@ def percentile(values, fraction):
     return ordered[min(len(ordered) - 1, int(len(ordered) * fraction))]
 
 
-def verdict(findings, unexplained, coverage, probes, alert_delays_s, monitor_completeness, extra=(), our_parts=()):
+def verdict(findings, unexplained, coverage, probes, alert_delays_s, monitor_completeness, extra=(), our_parts=(),
+            canaries=()):
     """The day's verdict and every rule that fired.
 
     coverage: {receiver: {"uncovered_min": n, "longest_gap_min": n}} for public receivers.
     probes: {"sent": n, "received": n, "latencies_s": [...]}.
     our_parts: [(event_id, seconds or None)] for the real alerts of the day.
+    canaries: receptors only the monitor follows. Nobody misses an alert through them, so what
+    would be a FAIL on one of them is a DEGRADED: a lost signal, not a lost warning.
     """
     failures, degradations = [], []
-    failures += [f"MISS on {f['receiver']} ({f['event']}, M{f['mag']}): {f['cause']}" for f in findings if fails(f)]
+    misses = [f for f in findings if fails(f)]
+    failures += [f"MISS on {f['receiver']} ({f['event']}, M{f['mag']}): {f['cause']}" for f in misses
+                 if f["receiver"] not in canaries]
+    degradations += [f"MISS on canary {f['receiver']} ({f['event']}, M{f['mag']}): {f['cause']}" for f in misses
+                     if f["receiver"] in canaries]
     failures += [f"FALSE on {c['receiver']}: capture with no quake in any catalog" for c in unexplained
                  if c["kind"] == "aws" and c["verdict"] == "FALSE"]
     for receiver, stats in coverage.items():
         if stats["longest_gap_min"] > 60:
-            failures.append(f"{receiver} uncovered {stats['longest_gap_min']} min in a row (> 60)")
+            (degradations if receiver in canaries else failures).append(f"{receiver} uncovered {stats['longest_gap_min']} min in a row (> 60)")
         elif stats["uncovered_min"] > 15:
             degradations.append(f"{receiver} uncovered {stats['uncovered_min']} min in the day (> 15)")
     if probes["sent"]:

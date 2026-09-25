@@ -54,3 +54,17 @@ test("the page shows green only when the server says covered, and red when it ca
       JSON.stringify(broken));
   }
 });
+
+test("sensors.json: unique ids, valid places, and the Philippine canaries never public", () => {
+  const ids = sensorsJson.sensors.map(sensor => sensor.id);
+  assert.equal(new Set(ids).size, ids.length, "duplicate sensor id");
+  for (const sensor of sensorsJson.sensors) {
+    assert.match(sensor.id, /^[a-z0-9-]+$/, sensor.id);
+    assert.ok(Math.abs(sensor.lat) <= 90 && Math.abs(sensor.lon) <= 180, sensor.id);
+    assert.equal(typeof sensor.public, "boolean", sensor.id);
+  }
+  // Canaries have no users: a public one would show up as coverage in the app.
+  for (const id of ["general-santos", "glan", "hinatuan"]) {
+    assert.equal(sensorsJson.sensors.find(sensor => sensor.id === id)?.public, false, id);
+  }
+});

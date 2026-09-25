@@ -717,3 +717,17 @@ test("demand: a token APNs never accepts is stored but never verified", async t 
   assert.equal(device.demand_cell, "37,-755");
   assert.equal(device.verified_at, null);
 });
+
+// Demand-driven siting: a phone outside coverage registers only its 0.1° cell. It must never be
+// woken by an alert for a receptor it did not ask for, and it must not disturb the covered phones.
+test("a demand-only phone never gets an alert, and a covered phone still does", async t => {
+  const apns = await startApns(t);
+  const { port } = await startGateway(t, { apnsHost: apns.url });
+  await register(port, PHONE, ["chaparral"]);
+  const demand = await request(port, "POST", "/devices",
+    JSON.stringify({ device_token: OTHER_PHONE, demand_cell: "37,-755", platform: "ios" }));
+  assert.equal(demand.status, 201);
+  await sendEvent(port, alertFrom("chaparral"));
+  await wait(300);
+  assert.deepEqual(apns.all.filter(push => push.payload.kind === "alert").map(push => push.token), [PHONE]);
+});

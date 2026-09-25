@@ -9,6 +9,8 @@
     { "id": "bucaramanga-a", "name": "Bucaramanga", "lat": 7.1193, "lon": -73.1227, "public": false },
     { "id": "chaparral", "name": "Chaparral", "lat": 3.7236, "lon": -75.4836, "public": true },
     { "id": "quibdo", "name": "Quibdó", "lat": 5.6947, "lon": -76.6611, "public": true },
-    { "id": "hinatuan", "name": "Hinatuan (control, Filipinas)", "lat": 8.3667, "lon": 126.3333, "public": false }
+    { "id": "hinatuan", "name": "Hinatuan (control, Filipinas)", "lat": 8.3667, "lon": 126.3333, "public": false },
+    { "id": "general-santos", "name": "General Santos (canary pair with glan, Philippines)", "lat": 6.11, "lon": 125.17, "public": false },
+    { "id": "glan", "name": "Glan (canary pair with general-santos, Philippines)", "lat": 5.82, "lon": 125.20, "public": false }
   ]
 }

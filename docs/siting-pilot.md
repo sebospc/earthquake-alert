@@ -88,7 +88,13 @@ Not applied. The ids that already exist are kept (`bucaramanga-a`, `quibdo`).
 { "id": "quibdo", "name": "Quibdó", "lat": 5.6947, "lon": -76.6611, "public": true }
 ```
 
-## Demand-driven growth (design, not built)
+## Demand-driven growth
+
+Built: the demand record in the gateway (`POST /devices` with `demand_cell`) and the daily
+proposal job (`scripts/receptor-placement.py`, writes `receptor-proposals.json` and one
+`RECEPTOR_PROPOSED` line each). Not built: creating a receptor (devops), the
+`new_receptor` push, and reloading `sensors.json` without a restart.
+`AUTO_RECEPTOR_BUDGET_USD` defaults to 0, and at 0 nothing is marked for creation.
 
 Goal: a user outside coverage leaves a signal, and enough signal in one area with real
 quake risk becomes a receptor there. Today the phone never sends its location, and the app
