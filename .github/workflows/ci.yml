@@ -29,6 +29,12 @@ jobs:
           bash scripts/e2e-relay.sh
           bash infra/deploy/test_remote.sh
           bash infra/deploy/test_ssm_run.sh
+          bash infra/new-account/test_backup.sh
+          bash infra/new-account/test_rebuild.sh
+      - name: cloudformation templates
+        run: |
+          pip install --quiet cfn-lint
+          cfn-lint --regions sa-east-1 -- infra/deploy/stack.yml infra/cloudwatch/stack.yml infra/cloudwatch/host-alarms.yml infra/https/stack.yml
       # Same Caddy as the host (Ubuntu 24.04 package). The package starts it on :80; the test
       # uses its own ports, so stop the service and run the binary.
       - name: caddy origin checks

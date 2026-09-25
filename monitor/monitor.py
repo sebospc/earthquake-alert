@@ -497,6 +497,9 @@ def poll_aws_location():
     """QA-84: the location Play Services holds on each AWS receptor, and whether
     earthquake_alerting keeps getting fed. Over ssh, read-only."""
     state, ip = instance()
+    if state is None:
+        # After an account move the old instance id no longer resolves: say so, never go quiet.
+        raise RuntimeError(f"AWS location poll: cannot describe {INSTANCE_ID}, no receptor was checked")
     if state != "running" or not ip:
         return
     out = subprocess.run(["ssh", "-i", SSH_KEY, "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new",

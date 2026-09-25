@@ -510,3 +510,12 @@ with tempfile.TemporaryDirectory() as host:
     except RuntimeError:
         pass
 print("PASS AWS receptors come from the host's sensor map: a new id is polled, keys stay, no map is loud")
+
+# An instance id that no longer resolves (account moved, credentials gone) fails the poll, not skips it.
+monitor.instance = lambda: (None, None)
+try:
+    monitor.poll_aws_location()
+    raise AssertionError("an unresolvable instance skipped the location poll silently")
+except RuntimeError:
+    pass
+print("PASS an instance the AWS CLI cannot describe fails the location poll instead of skipping it")
