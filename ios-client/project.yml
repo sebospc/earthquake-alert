@@ -2,21 +2,28 @@ name: EarthquakeRelay
 options:
   bundleIdPrefix: com.example
   deploymentTarget:
-    iOS: "15.0"
+    iOS: "26.0"
+packages:
+  RelayCore:
+    path: RelayCore
 targets:
   EarthquakeRelay:
     type: application
     platform: iOS
     sources:
       - EarthquakeRelay
+    dependencies:
+      - package: RelayCore
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.earthquakerelay
-        SWIFT_VERSION: "5.0"
+        SWIFT_VERSION: "6.0"
         CODE_SIGN_ENTITLEMENTS: EarthquakeRelay/EarthquakeRelay.entitlements
-        INFOPLIST_KEY_CFBundleDisplayName: Earthquake Relay Lab
+        INFOPLIST_KEY_CFBundleDisplayName: Sismo
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: true
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: true
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_UILaunchScreen_Generation: true
         GENERATE_INFOPLIST_FILE: true
     entitlements:
       path: EarthquakeRelay/EarthquakeRelay.entitlements

@@ -17,3 +17,5 @@ node_modules/
 gateway/heartbeats.json
 # holds the live ntfy topic; anyone who knows it can read or post alerts
 scripts/lab.config.json
+.build/
+.swiftpm/

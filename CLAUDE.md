@@ -10,7 +10,7 @@ alert at +18.1 s, ~0.8 s added by us (see `docs/qa/load.md`).
 
 1. `docs/STATUS.md`: current state, what is running, open items. Always first.
 2. `docs/roles/<your-name>.md`: if your session name is developer, developer-qa,
-   developer-ios or devops-earthquake. It says what you own and your rules.
+   developer-ios, devops-earthquake or investigator. It says what you own and your rules.
 3. Only what the task needs:
 
 | topic | file |
