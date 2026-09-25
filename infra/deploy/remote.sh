@@ -25,7 +25,10 @@ ALERT_QUIET_S=${ALERT_QUIET_S:-600}
 EVIDENCE_READ="test ! -e files/notification-evidence.jsonl || cat files/notification-evidence.jsonl"
 
 die() { echo "DEPLOY_FAILED: $*" >&2; exit 1; }
-aea_adb() { sudo -u "$EMULATOR_USER" -H "$ADB" "$@"; }
+# stdin is /dev/null: `adb shell` reads any stdin it inherits, which in a loop or a piped
+# script is the input meant for what comes after it.
+aea_adb() { sudo -u "$EMULATOR_USER" -H "$ADB" "$@" </dev/null; }
+aea_adb_with_input() { sudo -u "$EMULATOR_USER" -H "$ADB" "$@"; }
 map_ids() { awk 'NF >= 2 {print $2}' "$SENSOR_MAP"; }
 # Never `cmd | grep -q`: under pipefail grep's early exit gives the writer SIGPIPE (141), so a
 # match reads as a failure (QA-91). Capture first, then match the variable.
@@ -215,7 +218,7 @@ PY
   if [[ $key_switch == --key-switch || -n $fresh ]]; then
     printf '{"gateway_url":"http://10.0.2.2:8787/events","hmac_secret":"%s","sensor_id":"%s"}' \
       "$sensor_secret" "$sensor_id" \
-      | aea_adb -s "$serial" exec-in run-as "$PACKAGE" sh -c 'mkdir -p files && cat > files/relay.json'
+      | aea_adb_with_input -s "$serial" exec-in run-as "$PACKAGE" sh -c 'mkdir -p files && cat > files/relay.json'
   fi
   aea_adb -s "$serial" shell cmd notification allow_listener "$PACKAGE/.CaptureService"
 

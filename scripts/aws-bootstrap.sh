@@ -38,7 +38,14 @@ die() { echo "error: $*" >&2; exit 1; }
 
 # adb and the emulator console only trust the user that started the emulator (its adbkey
 # and console token live in that home). As root the device shows up "unauthorized".
+# stdin is /dev/null: `adb shell` reads whatever stdin it inherits, and inside a read loop that
+# is the loop's own input, so it ate the other targets and only the first got installed.
 aea_adb() {
+  sudo -u "$EMULATOR_USER" -H "$SDK_ROOT/platform-tools/adb" "$@" </dev/null
+}
+
+# Only for the one call that pipes data in on purpose.
+aea_adb_with_input() {
   sudo -u "$EMULATOR_USER" -H "$SDK_ROOT/platform-tools/adb" "$@"
 }
 
@@ -106,7 +113,9 @@ install_listener() {
   targets=$(resolve_listener_targets "$SENSOR_MAP" "$@") || exit 1
   local sensor_map=""
   local serial sensor_id
-  while read -r serial sensor_id; do
+  local installed=0
+  # The targets come in on fd 3, so nothing in the loop can read them off stdin.
+  while read -r serial sensor_id <&3; do
     # A typo here would make the gateway answer 400 to every alert, forever.
     local place
     place=$(node -e '
@@ -128,12 +137,16 @@ install_listener() {
     # 10.0.2.2 is the host's loopback as seen from inside the emulator.
     printf '{"gateway_url":"http://10.0.2.2:8787/events","hmac_secret":"%s","sensor_id":"%s"}' \
       "$sensor_secret" "$sensor_id" \
-      | aea_adb -s "$serial" exec-in run-as com.earthquakes.relay sh -c 'mkdir -p files && cat > files/relay.json'
+      | aea_adb_with_input -s "$serial" exec-in run-as com.earthquakes.relay sh -c 'mkdir -p files && cat > files/relay.json'
     aea_adb -s "$serial" shell cmd notification allow_listener com.earthquakes.relay/.CaptureService
     echo "$serial -> $sensor_id"
     sensor_map+="$serial $sensor_id $place $sensor_secret"$'\n'
-  done <<< "$targets"
+    installed=$((installed + 1))
+  done 3<<< "$targets"
   rm -f "$readable_apk"
+  local expected
+  expected=$(grep -c . <<< "$targets")
+  ((installed == expected)) || die "installed $installed of $expected listeners: the sensor map was not changed"
   # Tells the host health check which emulator answers for which sensor, where it is, and
   # the per-sensor key to sign with. Only the emulator user can read it; the health check
   # never gets the master secret or the VAPID key.

@@ -84,6 +84,7 @@ with tempfile.TemporaryDirectory() as directory:
           *exec-in*) cat > /dev/null ;;
         esac
       }}
+      aea_adb_with_input() {{ aea_adb "$@"; }}
       restart_foreign_adb_server() {{ :; }}
       systemctl() {{ :; }}
       mktemp() {{ command mktemp "{directory}/tmp.XXXXXX"; }}
@@ -101,3 +102,70 @@ with tempfile.TemporaryDirectory() as directory:
     assert (serial, sensor_id, lat, lon) == ("emulator-5556", "quibdo", "5.6947", "-76.6611")
     assert len(key) == 64 and key != "quibdo-key", "the per-sensor key was not derived"
 print("PASS installing one sensor touches only its emulator and keeps the other in the map")
+
+
+# --- three pairs, three installs: adb must not eat the loop's input ------------------------
+
+FAKE_ADB = """#!/bin/bash
+echo "$*" >> "$ADB_LOG"
+case "$*" in
+  *boot_completed*) cat > /dev/null; echo 1 ;;
+  *"dumpsys package"*) cat > /dev/null; echo "android.permission.ACCESS_FINE_LOCATION: granted=true" ;;
+  *exec-in*) cat > "$ADB_LOG.relay.$2" ;;
+  *) cat > /dev/null ;;
+esac
+"""
+
+
+def install_three(extra_stubs=""):
+    """Runs the real aea_adb against a fake adb that, like `adb shell`, reads all of stdin."""
+    with tempfile.TemporaryDirectory() as directory:
+        os.makedirs(os.path.join(directory, "gateway", "public"))
+        os.makedirs(os.path.join(directory, "sdk", "platform-tools"))
+        adb = os.path.join(directory, "sdk", "platform-tools", "adb")
+        with open(adb, "w") as handle:
+            handle.write(FAKE_ADB)
+        os.chmod(adb, 0o755)
+        with open(os.path.join(directory, "gateway", "public", "sensors.json"), "w") as handle:
+            json.dump({"sensors": [{"id": "chaparral", "lat": 3.7236, "lon": -75.4836},
+                                   {"id": "quibdo", "lat": 5.6947, "lon": -76.6611},
+                                   {"id": "general-santos", "lat": 6.11, "lon": 125.17}]}, handle)
+        for name, text in (("gateway.env", "RELAY_HMAC_SECRET=master\n"), ("listener.apk", "apk"),
+                           ("sensors.map", MAP)):
+            with open(os.path.join(directory, name), "w") as handle:
+                handle.write(text)
+        stubs = f'''
+          GATEWAY_DIR="{directory}/gateway"; GATEWAY_ENV="{directory}/gateway.env"
+          SENSOR_MAP="{directory}/sensors.map"; SDK_ROOT="{directory}/sdk"; EMULATOR_USER=aea
+          export ADB_LOG="{directory}/adb.log"
+          sudo() {{ shift 3; "$@"; }}
+          restart_foreign_adb_server() {{ :; }}
+          systemctl() {{ :; }}
+          mktemp() {{ command mktemp "{directory}/tmp.XXXXXX"; }}
+          install() {{ cp "${{@: -2:1}}" "${{@: -1}}"; }}
+          {extra_stubs}
+        '''
+        done = subprocess.run(["bash", "-c", f'source "{BOOTSTRAP}"\n{stubs}\ninstall_listener "{directory}/listener.apk" '
+                               "emulator-5554=chaparral emulator-5556=quibdo emulator-5558=general-santos"],
+                              capture_output=True, text=True, cwd=directory)
+        log = open(os.path.join(directory, "adb.log")).read().splitlines()
+        relays = {name.rsplit(".", 1)[1] for name in os.listdir(directory) if name.startswith("adb.log.relay.")}
+        return done, log, relays, open(os.path.join(directory, "sensors.map")).read()
+
+
+done, log, relays, sensor_map = install_three()
+assert done.returncode == 0, done.stderr
+installs = [line.split()[1] for line in log if " install -r -g " in line]
+assert installs == ["emulator-5554", "emulator-5556", "emulator-5558"], f"installed on {installs}"
+assert relays == {"emulator-5554", "emulator-5556", "emulator-5558"}, "relay.json did not reach every emulator"
+assert "emulator-5558 general-santos" in sensor_map
+print("PASS three pairs give three installs, although adb reads stdin")
+
+# Any future step in the loop that swallows the loop's input must fail loudly, not exit 0.
+done, log, relays, sensor_map = install_three('''
+  real_aea_adb() { sudo -u "$EMULATOR_USER" -H "$SDK_ROOT/platform-tools/adb" "$@" </dev/null; }
+  aea_adb() { cat <&3 > /dev/null; real_aea_adb "$@"; }''')
+assert done.returncode != 0, "a short install exited 0"
+assert "installed 1 of 3 listeners" in done.stderr, done.stderr
+assert sensor_map == MAP, "the sensor map changed after a short install"
+print("PASS fewer installs than targets dies and leaves the sensor map alone")
