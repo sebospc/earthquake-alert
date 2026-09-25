@@ -5,7 +5,7 @@ import XCTest
 final class EarthquakeAlertTests: XCTestCase {
     /// The contract's sample alert, as iOS hands it over in `userInfo`.
     let contractAlert: [AnyHashable: Any] = [
-        "aps": ["alert": ["title": "Alerta de sismo", "body": "Sismo M4.8 cerca de tu zona. Protéjase ahora."]],
+        "aps": ["alert": ["title": "Alerta de sismo", "body": "Sismo M4.8 cerca de su zona. Protéjase ahora."]],
         "kind": "alert",
         "event_id": "chaparral:t1790194179:alert",
         "sensor_id": "chaparral",
@@ -19,8 +19,9 @@ final class EarthquakeAlertTests: XCTestCase {
     func testDecodesTheContractSample() throws {
         let alert = try XCTUnwrap(EarthquakeAlert(userInfo: contractAlert))
         XCTAssertEqual(alert.eventID, "chaparral:t1790194179:alert")
-        XCTAssertEqual(alert.magnitudeText, "M4.5")
+        XCTAssertEqual(alert.magnitudeText(locale: Locale(identifier: "en_US")), "M4.5")
         XCTAssertFalse(alert.late)
+        XCTAssertEqual(alert.body, "Sismo M4.8 cerca de su zona. Protéjase ahora.")
         XCTAssertEqual(alert.expiresAt, ISO8601DateFormatter().date(from: "2026-09-24T10:05:00Z"))
     }
 
@@ -36,8 +37,13 @@ final class EarthquakeAlertTests: XCTestCase {
         XCTAssertNil(EarthquakeAlert(userInfo: ["kind": "coverage", "sensor_id": NSNull(), "covered": false]))
     }
 
-    func testMagnitudeTextIgnoresLocale() {
+    func testMagnitudeUsesThePhonesDecimalSeparator() {
         let alert = EarthquakeAlert(eventID: "e", magnitude: 4.8, late: false, expiresAt: .now)
-        XCTAssertEqual(alert.magnitudeText, "M4.8")
+        XCTAssertEqual(alert.magnitudeText(locale: Locale(identifier: "en_US")), "M4.8")
+        XCTAssertEqual(alert.magnitudeText(locale: Locale(identifier: "es_CO")), "M4,8")
+        XCTAssertEqual(alert.magnitudeText(locale: Locale(identifier: "pt_BR")), "M4,8")
+        XCTAssertEqual(alert.magnitudeText(locale: Locale(identifier: "en_US")),
+                       EarthquakeAlert(eventID: "e", magnitude: 4.75, late: false, expiresAt: .now)
+                           .magnitudeText(locale: Locale(identifier: "en_US")), "one decimal, rounded")
     }
 }

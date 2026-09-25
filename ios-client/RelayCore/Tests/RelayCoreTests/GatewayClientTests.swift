@@ -82,6 +82,23 @@ final class GatewayClientTests: XCTestCase {
         XCTAssertNil(FakeGateway.lastBody["sensor_ids"], "server answers 400 when both are present")
     }
 
+    func testLimitedSendsReceptorsStrongOnlyAndTheCellTogether() async throws {
+        FakeGateway.respond = { _, _ in (201, #"{"sensor_ids":["chaparral"],"demand_cell":"44,-753","min_magnitude":{"chaparral":5.5},"apns_env":"sandbox"}"#) }
+
+        _ = try await client.subscribe(deviceToken: token, to: .init(sensorIDs: ["chaparral"], minMagnitude: ["chaparral": 5.5], demandCell: "44,-753"))
+
+        XCTAssertEqual(FakeGateway.lastBody["sensor_ids"] as? [String], ["chaparral"])
+        XCTAssertEqual(FakeGateway.lastBody["min_magnitude"] as? [String: Double], ["chaparral": 5.5])
+        XCTAssertEqual(FakeGateway.lastBody["demand_cell"] as? String, "44,-753")
+    }
+
+    func testPlainReceptorsSendNoEmptyExtras() async throws {
+        FakeGateway.respond = { _, _ in (201, #"{"sensor_ids":["chaparral"]}"#) }
+        _ = try await client.subscribe(deviceToken: token, to: .receptors(["chaparral"]))
+        XCTAssertNil(FakeGateway.lastBody["min_magnitude"], "the server rejects an empty min_magnitude")
+        XCTAssertNil(FakeGateway.lastBody["demand_cell"])
+    }
+
     func testUnsubscribeSendsOnlyTheToken() async throws {
         FakeGateway.respond = { _, _ in (204, "") }
 
@@ -103,6 +120,49 @@ final class GatewayClientTests: XCTestCase {
         }
         FakeGateway.respond = { _, _ in throw URLError(.notConnectedToInternet) }
         await assertFailure(.retryLater)
+    }
+
+    func testArrivalUploadSendsTheContractBody() async throws {
+        let arrival = PushArrival(userInfo: ["kind": "alert", "event_id": "chaparral:1", "sent_at_ms": NSNumber(value: 1_000)],
+                                  receivedAt: Date(timeIntervalSince1970: 1.5), source: .app, appState: .foreground)
+        FakeGateway.respond = { request, body in
+            XCTAssertEqual(request.url?.path, "/telemetry/arrivals")
+            XCTAssertEqual(body["device_token"] as? String, self.token.hexString)
+            let item = (body["arrivals"] as? [[String: Any]])?.first ?? [:]
+            XCTAssertEqual(item["kind"] as? String, "alert")
+            XCTAssertEqual(item["event_id"] as? String, "chaparral:1")
+            XCTAssertEqual(item["sent_at_ms"] as? Int, 1_000)
+            XCTAssertEqual(item["received_at_ms"] as? Int, 1_500)
+            XCTAssertEqual(item["source"] as? String, "app")
+            XCTAssertEqual(item["app_state"] as? String, "foreground")
+            return (202, #"{"stored":1,"duplicates":0}"#)
+        }
+        let result = try await client.uploadArrivals(deviceToken: token, [arrival])
+        XCTAssertEqual(result, .stored)
+    }
+
+    func testArrivalUploadStatusMapping() async throws {
+        for (status, expected) in [(404, GatewayClient.TelemetryUpload.telemetryOff), (400, .invalid), (413, .invalid)] {
+            FakeGateway.respond = { _, _ in (status, "{}") }
+            let result = try await client.uploadArrivals(deviceToken: token, [])
+            XCTAssertEqual(result, expected, "HTTP \(status)")
+        }
+        for status in [429, 503] {
+            FakeGateway.respond = { _, _ in (status, "{}") }
+            do {
+                _ = try await client.uploadArrivals(deviceToken: token, [])
+                XCTFail("HTTP \(status) must be retried")
+            } catch {
+                XCTAssertEqual(error, .retryLater)
+            }
+        }
+    }
+
+    func testTelemetryFlagIn201DefaultsToOff() throws {
+        let off = try JSONDecoder().decode(GatewayClient.Registered.self, from: Data(#"{"sensor_ids":["a"],"apns_env":"sandbox"}"#.utf8))
+        let on = try JSONDecoder().decode(GatewayClient.Registered.self, from: Data(#"{"sensor_ids":["a"],"telemetry":true}"#.utf8))
+        XCTAssertFalse(off.telemetry)
+        XCTAssertTrue(on.telemetry)
     }
 
     func testUnreadable201IsNotTakenAsRegistered() async {
@@ -164,6 +224,31 @@ final class GatewayStatusTests: XCTestCase {
         for await coverage in client.watchCoverage(every: .milliseconds(10)) {
             XCTAssertNil(coverage)
             break
+        }
+    }
+}
+
+final class GatewaySensorsTests: XCTestCase {
+    let client = GatewayClient(
+        baseURL: URL(string: "https://gateway.test")!, apnsEnvironment: .sandbox, session: FakeGateway.session)
+
+    func testReadsSensorsJSON() async throws {
+        FakeGateway.respond = { _, _ in
+            (200, #"{"version":2,"coverage":{"full_km":31,"partial_km":78},"sensors":[{"id":"chaparral","name":"Chaparral","lat":3.7,"lon":-75.4,"public":true}]}"#)
+        }
+        let sensors = try await client.sensors()
+        XCTAssertEqual(sensors.map(\.id), ["chaparral"])
+    }
+
+    func testEmptyOrBrokenSensorsJSONIsAFailureNotAnEmptyList() async {
+        for body in [#"{"coverage":{"full_km":31,"partial_km":78},"sensors":[]}"#, "<html>"] {
+            FakeGateway.respond = { _, _ in (200, body) }
+            do {
+                _ = try await client.sensors()
+                XCTFail("must throw for \(body)")
+            } catch {
+                XCTAssertEqual(error, .retryLater)
+            }
         }
     }
 }

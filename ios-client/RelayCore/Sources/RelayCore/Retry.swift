@@ -26,6 +26,7 @@ extension GatewayClient.Failure {
 /// Retries `.retryLater` without limit: the screen shows "not registered" meanwhile, and giving up
 /// silently would be worse. Stops with `.retryLater` when the task is cancelled.
 public func retrying<Value>(
+    isolation: isolated (any Actor)? = #isolation,
     backoff: Backoff = Backoff(),
     unitRandom: @Sendable () -> Double = { Double.random(in: 0..<1) },
     sleep: @Sendable (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) },

@@ -1,31 +1,109 @@
 name: EarthquakeRelay
 options:
   bundleIdPrefix: com.example
+  developmentLanguage: es
   deploymentTarget:
     iOS: "26.0"
 packages:
   RelayCore:
     path: RelayCore
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_EMIT_LOC_STRINGS: YES
+    LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+    MARKETING_VERSION: "0.1"
+    # Raise on every TestFlight upload: App Store Connect refuses a build number it has seen.
+    CURRENT_PROJECT_VERSION: "1"
+    # The one place to change the bundle id: targets, the app group and the NSE derive from it.
+    # The gateway's APNS_BUNDLE_ID must be the same value.
+    APP_BUNDLE_ID: com.example.earthquakerelay
+    # The user's Apple team id (App Store Connect, Membership). Empty until the account exists.
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+  configs:
+    Debug:
+      APS_ENVIRONMENT: development
+    Release:
+      APS_ENVIRONMENT: production
+    # Once Apple approves Critical Alerts: SWIFT_ACTIVE_COMPILATION_CONDITIONS "$(inherited) CRITICAL_ALERTS"
+    # and com.apple.developer.usernotifications.critical-alerts in the app entitlements.
 targets:
   EarthquakeRelay:
     type: application
     platform: iOS
+    scheme:
+      testTargets: [EarthquakeRelayUITests]
     sources:
       - EarthquakeRelay
     dependencies:
       - package: RelayCore
+      - target: AlertService
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.example.earthquakerelay
-        SWIFT_VERSION: "6.0"
+        PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID)
         CODE_SIGN_ENTITLEMENTS: EarthquakeRelay/EarthquakeRelay.entitlements
         INFOPLIST_KEY_CFBundleDisplayName: Sismo
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: true
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: true
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_UILaunchScreen_Generation: true
+        INFOPLIST_KEY_UIBackgroundModes: location remote-notification
+        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Su ubicación se usa para elegir los sensores de sismo más cercanos. Al servidor solo llega una zona aproximada, nunca su posición exacta."
+        INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription: "Para cambiar de sensores cuando usted viaja, aunque la app esté cerrada. Al servidor solo llega una zona aproximada, nunca su posición exacta."
         GENERATE_INFOPLIST_FILE: true
+    info:
+      path: EarthquakeRelay/Info.plist
+      properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        AppGroupIdentifier: group.$(APP_BUNDLE_ID)
+        # Plain HTTP only to localhost: the DEBUG dry-run gateway.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
     entitlements:
       path: EarthquakeRelay/EarthquakeRelay.entitlements
       properties:
-        aps-environment: development
+        aps-environment: $(APS_ENVIRONMENT)
+        com.apple.developer.usernotifications.time-sensitive: true
+        com.apple.security.application-groups: [group.$(APP_BUNDLE_ID)]
+  AlertService:
+    type: app-extension
+    platform: iOS
+    sources:
+      - AlertService
+      # The push loc-keys, so the extension can resolve them the way iOS does (PushText).
+      - EarthquakeRelay/Localizable.xcstrings
+    dependencies:
+      - package: RelayCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID).alertservice
+        CODE_SIGN_ENTITLEMENTS: AlertService/AlertService.entitlements
+        GENERATE_INFOPLIST_FILE: true
+        INFOPLIST_KEY_CFBundleDisplayName: AlertService
+    info:
+      path: AlertService/Info.plist
+      properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        AppGroupIdentifier: group.$(APP_BUNDLE_ID)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.usernotifications.service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).NotificationService
+    entitlements:
+      path: AlertService/AlertService.entitlements
+      properties:
+        com.apple.security.application-groups: [group.$(APP_BUNDLE_ID)]
+  EarthquakeRelayUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - EarthquakeRelayUITests
+    dependencies:
+      - target: EarthquakeRelay
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID).uitests
+        GENERATE_INFOPLIST_FILE: true

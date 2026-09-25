@@ -1,0 +1,1106 @@
+{
+  "sourceLanguage": "es",
+  "strings": {
+    "%@ %@": {
+      "shouldTranslate": false
+    },
+    "ALERT_BODY_MAGNITUDE": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sismo M%@ cerca de su zona. Protéjase ahora."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sismo M%@ cerca de su zona. Protéjase ahora."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sismo M%@ cerca de su zona. Protéjase ahora."
+          }
+        }
+      }
+    },
+    "ALERT_BODY_NO_MAGNITUDE": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Posible sismo cerca de su zona. Protéjase ahora."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Posible sismo cerca de su zona. Protéjase ahora."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Posible sismo cerca de su zona. Protéjase ahora."
+          }
+        }
+      }
+    },
+    "ALERT_TITLE": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Earthquake Alert"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alerta de sismo"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Alerta de terremoto"
+          }
+        }
+      }
+    },
+    "Abrir Ajustes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Open Settings"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Abrir Ajustes"
+          }
+        }
+      }
+    },
+    "Acepto": {
+      "shouldTranslate": false
+    },
+    "Activar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Turn On"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Ativar"
+          }
+        }
+      }
+    },
+    "Activar alertas": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Turn On Alerts"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Ativar alertas"
+          }
+        }
+      }
+    },
+    "Activo": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Active"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Ativo"
+          }
+        }
+      }
+    },
+    "Ahora mismo no podemos avisarle. Lo estamos arreglando.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "We can't alert you right now. We're fixing it."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "No momento não podemos avisar você. Estamos resolvendo."
+          }
+        }
+      }
+    },
+    "Ahora mismo no podemos avisarle. Revise su conexión a internet.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "We can't alert you right now. Check your internet connection."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "No momento não podemos avisar você. Verifique sua conexão com a internet."
+          }
+        }
+      }
+    },
+    "Alerta de prueba": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Test Alert"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Alerta de teste"
+          }
+        }
+      }
+    },
+    "Alerta de sismo": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Earthquake Alert"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Alerta de terremoto"
+          }
+        }
+      }
+    },
+    "Alertas activas": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Alerts On"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Alertas ativos"
+          }
+        }
+      }
+    },
+    "Alertas de sismo": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Earthquake Alerts"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Alertas de terremoto"
+          }
+        }
+      }
+    },
+    "Alertas desactivadas": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Alerts Off"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Alertas desativados"
+          }
+        }
+      }
+    },
+    "Antes de empezar": {
+      "shouldTranslate": false
+    },
+    "Aviso atrasado": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Late Notice"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Aviso atrasado"
+          }
+        }
+      }
+    },
+    "Aviso de privacidad": {
+      "shouldTranslate": false
+    },
+    "Aún no pudimos borrar su registro del servidor. Seguimos intentando; hasta entonces podría llegarle alguna alerta.": {
+      "shouldTranslate": false
+    },
+    "COVERAGE_RESTORED_BODY": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Alerts for your area work again."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las alertas de su zona vuelven a funcionar."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Os alertas da sua região voltaram a funcionar."
+          }
+        }
+      }
+    },
+    "COVERAGE_RESTORED_TITLE": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Coverage Restored"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cobertura restablecida"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Cobertura restabelecida"
+          }
+        }
+      }
+    },
+    "Cerrar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Close"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Fechar"
+          }
+        }
+      }
+    },
+    "Cobertura": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Coverage"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Cobertura"
+          }
+        }
+      }
+    },
+    "Cobertura completa": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Full coverage"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Cobertura completa"
+          }
+        }
+      }
+    },
+    "Cobertura limitada: solo le avisaremos de sismos fuertes.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Limited coverage: we'll only alert you about strong earthquakes."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Cobertura limitada: só avisaremos sobre terremotos fortes."
+          }
+        }
+      }
+    },
+    "Cobertura parcial: algunos sismos pequeños podrían no avisarse.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Partial coverage: some small earthquakes may not trigger an alert."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Cobertura parcial: alguns terremotos pequenos podem não ser avisados."
+          }
+        }
+      }
+    },
+    "Con Concentración activa, el aviso puede llegar en silencio.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "With a Focus on, the alert may arrive silently."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Com um Foco ativado, o aviso pode chegar em silêncio."
+          }
+        }
+      }
+    },
+    "Dejará de recibir alertas de sismo y borraremos su registro del servidor.": {
+      "shouldTranslate": false
+    },
+    "Enviada. Debería sonar en unos segundos.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sent. It should sound in a few seconds."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Enviado. Deve tocar em alguns segundos."
+          }
+        }
+      }
+    },
+    "Enviando…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sending…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Enviando…"
+          }
+        }
+      }
+    },
+    "Espere unos minutos para probar de nuevo.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Wait a few minutes to try again."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Aguarde alguns minutos para testar de novo."
+          }
+        }
+      }
+    },
+    "Esta app no es un sistema oficial ni del Estado. Puede fallar o llegar tarde, y no reemplaza las indicaciones de las autoridades.": {
+      "shouldTranslate": false
+    },
+    "Falta su ubicación": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Location Needed"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Falta sua localização"
+          }
+        }
+      }
+    },
+    "LATE_ALERT_BODY": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "El sismo ocurrió hace %@ min. Ya no es un aviso anticipado."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El sismo ocurrió hace %@ min. Ya no es un aviso anticipado."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "El sismo ocurrió hace %@ min. Ya no es un aviso anticipado."
+          }
+        }
+      }
+    },
+    "LATE_ALERT_TITLE": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Late Earthquake Notice"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aviso de sismo atrasado"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Aviso de terremoto atrasado"
+          }
+        }
+      }
+    },
+    "La usamos para elegir los sensores cercanos. Su posición exacta no sale del teléfono.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "We use it to choose nearby sensors. Your exact position never leaves the phone."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Nós a usamos para escolher os sensores próximos. Sua posição exata não sai do telefone."
+          }
+        }
+      }
+    },
+    "Las alertas pueden no sonar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Alerts May Not Sound"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Os alertas podem não tocar"
+          }
+        }
+      }
+    },
+    "Le avisamos cuando se detecta un sismo cerca de usted.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "We alert you when an earthquake is detected near you."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Avisamos você quando um terremoto é detectado perto de você."
+          }
+        }
+      }
+    },
+    "Le enviamos una alerta de prueba para que escuche cómo suena.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "We send you a test alert so you can hear how it sounds."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Enviamos um alerta de teste para você ouvir como ele soa."
+          }
+        }
+      }
+    },
+    "Llegó. Así sonará una alerta.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "It arrived. This is how an alert will sound."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Chegou. É assim que um alerta vai tocar."
+          }
+        }
+      }
+    },
+    "Muestra los sensores que lo cubren": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Shows the sensors that cover you"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Mostra os sensores que cobrem você"
+          }
+        }
+      }
+    },
+    "NO_COVERAGE_BODY": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Your area has no coverage yet."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Su zona todavía no tiene cobertura."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sua região ainda não tem cobertura."
+          }
+        }
+      }
+    },
+    "NO_COVERAGE_TITLE": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "No Coverage in Your Area"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin cobertura en su zona"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sem cobertura na sua região"
+          }
+        }
+      }
+    },
+    "Ningún sensor cerca por ahora.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "No sensor nearby yet."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Nenhum sensor por perto por enquanto."
+          }
+        }
+      }
+    },
+    "No llegó. Revise que las notificaciones estén activadas.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "It didn't arrive. Check that notifications are on."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Não chegou. Verifique se as notificações estão ativadas."
+          }
+        }
+      }
+    },
+    "No se pudo enviar. Revise su conexión a internet.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Couldn't send. Check your internet connection."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Não foi possível enviar. Verifique sua conexão com a internet."
+          }
+        }
+      }
+    },
+    "Para avisarle guardamos el identificador de notificaciones de su iPhone y una zona aproximada de unos 11 km. Su posición exacta nunca sale del teléfono.": {
+      "shouldTranslate": false
+    },
+    "Permita las notificaciones para que la alerta le llegue al instante.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Allow notifications so the alert reaches you instantly."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Permita as notificações para que o alerta chegue na hora."
+          }
+        }
+      }
+    },
+    "Probar alerta": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Send Test Alert"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Enviar alerta de teste"
+          }
+        }
+      }
+    },
+    "Recibida %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Received %@"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Recebido %@"
+          }
+        }
+      }
+    },
+    "Reintentando. Mientras tanto no recibirá alertas.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Retrying. Until then you won't get alerts."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Tentando de novo. Enquanto isso você não receberá alertas."
+          }
+        }
+      }
+    },
+    "Retirar consentimiento": {
+      "shouldTranslate": false
+    },
+    "SERVICE_DOWN_BODY": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "We can't alert you right now."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ahora mismo no podemos avisarle."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "No momento não podemos avisar você."
+          }
+        }
+      }
+    },
+    "SERVICE_DOWN_TITLE": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Service Interrupted"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Servicio interrumpido"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Serviço interrompido"
+          }
+        }
+      }
+    },
+    "Sensores que lo cubren": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sensors covering you"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sensores que cobrem você"
+          }
+        }
+      }
+    },
+    "Servicio interrumpido": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Service Interrupted"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Serviço interrompido"
+          }
+        }
+      }
+    },
+    "Servicio interrumpido: ahora mismo no podemos avisarle.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Service interrupted: we can't alert you right now."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Serviço interrompido: no momento não podemos avisar você."
+          }
+        }
+      }
+    },
+    "Sin cobertura aún": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "No Coverage Yet"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sem cobertura ainda"
+          }
+        }
+      }
+    },
+    "Sin conexión con el servidor": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "No Connection to the Server"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sem conexão com o servidor"
+          }
+        }
+      }
+    },
+    "Sin datos": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "No data"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sem dados"
+          }
+        }
+      }
+    },
+    "Sin permiso no podemos avisarle.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Without permission we can't alert you."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sem permissão não podemos avisar você."
+          }
+        }
+      }
+    },
+    "Sin señal": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "No signal"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sem sinal"
+          }
+        }
+      }
+    },
+    "Su posición exacta no sale del teléfono.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Your exact position never leaves the phone."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sua posição exata não sai do telefone."
+          }
+        }
+      }
+    },
+    "Su teléfono aún no está registrado. Reintentando.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Your phone isn't registered yet. Retrying."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Seu telefone ainda não está registrado. Tentando de novo."
+          }
+        }
+      }
+    },
+    "Su zona todavía no tiene cobertura.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Your area has no coverage yet."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sua região ainda não tem cobertura."
+          }
+        }
+      }
+    },
+    "TEST_ALERT_BODY": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "This is how an earthquake alert will sound. This is only a test."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Así sonará una alerta de sismo. Esto es solo una prueba."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "É assim que um alerta de terremoto vai tocar. Isto é só um teste."
+          }
+        }
+      }
+    },
+    "TEST_ALERT_TITLE": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Test Alert"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alerta de prueba"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Alerta de teste"
+          }
+        }
+      }
+    },
+    "Términos de uso": {
+      "shouldTranslate": false
+    },
+    "Ubicación actualizada %@. Abra la app en su zona para actualizarla.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Location updated %@. Open the app in your area to update it."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Localização atualizada %@. Abra o app na sua região para atualizá-la."
+          }
+        }
+      }
+    },
+    "Un paso más": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "One More Step"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Mais um passo"
+          }
+        }
+      }
+    },
+    "¿Retirar su consentimiento?": {
+      "shouldTranslate": false
+    }
+  },
+  "version": "1.0"
+}

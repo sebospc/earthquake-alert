@@ -4,13 +4,17 @@ import Foundation
 public enum AppState: Equatable, Sendable {
     case notSetUp
     case askingPermission
-    case covered(receptors: Int)
+    case covered(CoverageTier)
     case notCovered
     case alert(EarthquakeAlert)
     case error(Problem)
 
     public enum Problem: Equatable, Sendable {
         case notificationsOff
+        /// Alerts arrive, but Focus may silence them.
+        case timeSensitiveOff
+        /// No receptor set yet and no location to choose one.
+        case locationOff
         case notRegistered
         case serviceUnreachable
         case receptorsDown
@@ -31,11 +35,16 @@ public enum Registration: Equatable, Sendable {
 extension AppState {
     /// The only place that decides the screen. Anything unknown or broken ends in `.error`,
     /// never in a green state: a silent failure is worse than a loud one.
-    /// - Parameter receptorCoverage: from `CoverageTracker`: nil when /status has not answered within the grace.
+    /// - Parameters:
+    ///   - receptorCoverage: from `CoverageTracker`: nil when /status has not answered within the grace.
+    ///   - tier: coverage tier of the receptors that are up.
     public static func derive(
         permission: Permission,
+        timeSensitiveOn: Bool = true,
+        locationDenied: Bool = false,
         registration: Registration,
         receptorCoverage: [String: Bool]?,
+        tier: ([String]) -> CoverageTier = { _ in .full },
         alert: EarthquakeAlert?,
         now: Date
     ) -> AppState {
@@ -50,13 +59,15 @@ extension AppState {
 
         switch registration {
         case .pending:
-            return .error(.notRegistered)
+            return .error(locationDenied ? .locationOff : .notRegistered)
         case .outsideCoverage:
             return .notCovered
         case .receptors(let sensorIDs):
             guard let receptorCoverage else { return .error(.serviceUnreachable) }
-            let coveringCount = sensorIDs.filter { receptorCoverage[$0] == true }.count
-            return coveringCount == 0 ? .error(.receptorsDown) : .covered(receptors: coveringCount)
+            let upIDs = sensorIDs.filter { receptorCoverage[$0] == true }
+            if upIDs.isEmpty { return .error(.receptorsDown) }
+            if !timeSensitiveOn { return .error(.timeSensitiveOff) }
+            return .covered(tier(upIDs))
         }
     }
 }

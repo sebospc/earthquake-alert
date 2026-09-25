@@ -1,0 +1,75 @@
+{
+  "sourceLanguage": "es",
+  "strings": {
+    "CFBundleDisplayName": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sismo"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sismo"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sismo"
+          }
+        }
+      }
+    },
+    "NSLocationAlwaysAndWhenInUseUsageDescription": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "To switch sensors when you travel, even with the app closed. The server only gets an approximate area, never your exact position."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Para cambiar de sensores cuando usted viaja, aunque la app esté cerrada. Al servidor solo llega una zona aproximada, nunca su posición exacta."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Para trocar de sensores quando você viaja, mesmo com o app fechado. O servidor recebe só uma área aproximada, nunca sua posição exata."
+          }
+        }
+      }
+    },
+    "NSLocationWhenInUseUsageDescription": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Your location is used to choose the nearest earthquake sensors. The server only gets an approximate area, never your exact position."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Su ubicación se usa para elegir los sensores de sismo más cercanos. Al servidor solo llega una zona aproximada, nunca su posición exacta."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sua localização é usada para escolher os sensores de terremoto mais próximos. O servidor recebe só uma área aproximada, nunca sua posição exata."
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

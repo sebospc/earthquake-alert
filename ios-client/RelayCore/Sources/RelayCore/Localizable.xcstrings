@@ -1,0 +1,38 @@
+{
+  "sourceLanguage": "es",
+  "strings": {
+    "Abra la app para confirmar que sus alertas siguen activas.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Open the app to confirm your alerts are still on."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Abra o app para confirmar que seus alertas continuam ativos."
+          }
+        }
+      }
+    },
+    "Verifique sus alertas de sismo": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Check your earthquake alerts"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Verifique seus alertas de terremoto"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}
