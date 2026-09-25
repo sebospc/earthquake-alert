@@ -80,6 +80,14 @@ jobs:
           mkdir dist
           cp apk/listener.apk build/tools.tar.gz build/tools.manifest dist/
           { grep ' tools.tar.gz$' build/SHA256SUMS; cat apk/listener.apk.sha256; } > dist/SHA256SUMS
+      # Only the subject claim, never the token: when the role trust does not match, the log
+      # shows exactly what GitHub sent (the first run failed on the immutable subject format).
+      - name: oidc subject
+        run: |
+          token=$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)
+          payload=$(cut -d. -f2 <<<"$token" | tr '_-' '/+')
+          while (( ${#payload} % 4 )); do payload+="="; done
+          base64 -d <<<"$payload" | jq -r '"sub=\(.sub) aud=\(.aud) ref=\(.ref)"'
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}

@@ -50,6 +50,45 @@ Resources:
       AlarmActions: [!ImportValue aea-lab-alert-topic]
       OKActions: [!ImportValue aea-lab-alert-topic]
 
+  # The swapfile is an emergency buffer (vm.swappiness=1), not capacity: swap in real use
+  # means the host is over its RAM budget and an emulator may page out during an alert.
+  # The fix is to take the extra canary emulator off, not to wait.
+  SwapInUseAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub aea-lab-${Host}-swap-in-use
+      AlarmDescription: !Sub Swap over 100 MB for 10 min on ${Host} - over the RAM budget. Stop the last canary emulator added (glan first). Swapped pages stay out after the pressure ends, so this stays in ALARM until `sudo swapoff -a && sudo swapon -a` (with enough MemAvailable to take them back).
+      Namespace: AeaLab
+      MetricName: SwapUsedMB
+      Dimensions: [{ Name: Host, Value: !Ref Host }]
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 10
+      Threshold: 100
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!ImportValue aea-lab-alert-topic]
+      OKActions: [!ImportValue aea-lab-alert-topic]
+
+  # Earlier warning than swap: qemu RSS grows for hours after a boot (QA, 25-sep), so the
+  # squeeze shows here first.
+  MemLowAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub aea-lab-${Host}-memory-low
+      AlarmDescription: !Sub MemAvailable under 1 GB for 15 min on ${Host} - the emulators are outgrowing the host; swap or the OOM killer come next.
+      Namespace: AeaLab
+      MetricName: MemAvailableMB
+      Dimensions: [{ Name: Host, Value: !Ref Host }]
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 15
+      Threshold: 1024
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!ImportValue aea-lab-alert-topic]
+      OKActions: [!ImportValue aea-lab-alert-topic]
+
   # sensor-health's AEA_LOCATION_AGE, read by the probe. Past ~24 h GMS stops alerting (QA-84).
   # sensor-health itself reboots at > 20 h, so 21 h (20 h + 2 runs + boot and first delivery)
   # means that repair did not happen or did not help, still 3 h before the blind limit. Same

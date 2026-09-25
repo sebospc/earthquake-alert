@@ -207,6 +207,7 @@ CPU contention would show on the alert path. Read-only, 2026-09-25 00:31 UTC, 2 
 | host load average (1/5/15 min) | 0.24 / 0.23 / 0.19 | |
 | host CPU (vmstat, 5 s samples) | us 2–10 %, idle 82–92 %, steal 0 | |
 | host memory used / available | 7.6 GB / 8.1 GB | |
+| RSS per emulator, qemu, after 10.7 h (chaparral / quibdo) | 3.42 GB / 3.71 GB | |
 | busiest emulator (top) | 10 % of a vCPU | |
 | adb shell round trip, p50 of 5 (chaparral / quibdo) | 13 ms / 14 ms | |
 | full GMS dumpsys (chaparral / quibdo) | 0.20 s / 0.12 s | |

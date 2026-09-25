@@ -181,10 +181,10 @@ def call(method, path_with_query, payload=None, signed=False, timeout=15):
 
 
 def certified_sensors():
-    """Public receptors, plus the canaries (MONITOR_CANARY_PAIRS): not public, followed only by us."""
-    canaries = {sensor_id for pair in CANARY_PAIRS for sensor_id in pair}
+    """Public receptors, plus the canaries (MONITOR_CANARIES, MONITOR_CANARY_PAIRS): not public,
+    followed only by us."""
     sensors = call("GET", "/sensors.json")["sensors"]
-    return [s for s in sensors if s.get("public") is True or s["id"] in canaries]
+    return [s for s in sensors if s.get("public") is True or s["id"] in CANARIES]
 
 
 def poll_health():
@@ -453,6 +453,10 @@ AWS_SERIALS = dict(item.split(":") for item in os.environ.get(
 # Receptors running GpsKeeperService: held to the 1 h / 2 h rule instead of the ~24 h one.
 # Canary pairs that control each other, "a:b,c:d" (docs/siting-canaries.md). Empty until provisioned.
 CANARY_PAIRS = [pair.split(":") for pair in os.environ.get("MONITOR_CANARY_PAIRS", "").split(",") if pair]
+# Every canary, paired or alone ("general-santos"): not public, certified, never worse than DEGRADED.
+# Empty until they are live: a listed canary that is not running reads as uncovered.
+CANARIES = set(filter(None, os.environ.get("MONITOR_CANARIES", "").split(","))) \
+    | {sensor_id for pair in CANARY_PAIRS for sensor_id in pair}
 GPSKEEPER = set(filter(None, os.environ.get("MONITOR_GPSKEEPER", "quibdo").split(",")))
 # Read-only: uptime, the GPS line of dumpsys location, and earthquake_alerting's total.
 REMOTE_LOCATION_SCRIPT = """A="sudo -u aea -H /opt/android-sdk/platform-tools/adb"
@@ -551,7 +555,7 @@ def certificate(day, state, sensors):
     decision, reasons = verify.verdict(findings, unexplained, coverage, probes, delays,
                                        min(1.0, completeness), verify.location_problems(location, GPSKEEPER) + repeated,
                                        [(c["event_id"], c["our_part"]) for c in alerts],
-                                       {sensor_id for pair in CANARY_PAIRS for sensor_id in pair})
+                                       CANARIES)
     return render(day, decision, reasons, coverage, probes, findings, unexplained, alerts, completeness, horizon < end,
                   restarts, manual)
 

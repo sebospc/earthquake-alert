@@ -273,3 +273,4 @@ Candidates, ordered by expected gain (none measured):
 5. Compare AWS spot against a dedicated server without nested virtualization.
 
 Ruled out: swap/zswap on the host (paging in from swap adds seconds right when the alert arrives), low-RAM/Go mode (requires modifying the image) and changing the Android version without revalidating AEA with a real quake.
+Note 2026-09-25: a 4 GB swapfile with vm.swappiness=1 is allowed as an emergency buffer only, because under memory pressure the alternative is the OOM killer taking a whole emulator. Swap in real use (> 100 MB for 10 min) pages and means over budget: the last canary emulator comes off.

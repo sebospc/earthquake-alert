@@ -10,9 +10,12 @@ Parameters:
     Type: String
     AllowedValues: ["true", "false"]
     Description: false if the account already has token.actions.githubusercontent.com
-  GitHubRepo:
+  # The repo uses GitHub's immutable subject (owner and repo ids), so a renamed or re-created
+  # repo with the same name can never assume the role. Read it with:
+  #   gh api repos/sebospc/earthquake-alert/actions/oidc/customization/sub  -> sub_claim_prefix
+  OidcSubjectPrefix:
     Type: String
-    Default: sebospc/earthquake-alert
+    Default: repo:sebospc@20503334/earthquake-alert@1386205814
 Conditions:
   NewOidcProvider: !Equals [!Ref CreateOidcProvider, "true"]
 Resources:
@@ -41,7 +44,7 @@ Resources:
 
   # Only this repo, only main, only the protected `production` environment. The default OIDC
   # subject of an environment job has no ref, so the repo's template must add it:
-  #   echo '{"use_default":false,"include_claim_keys":["repo","context","ref"]}' |
+  #   echo '{"use_default":false,"use_immutable_subject":true,"include_claim_keys":["repo","context","ref"]}' |
   #     gh api -X PUT repos/sebospc/earthquake-alert/actions/oidc/customization/sub --input -
   DeployRole:
     Type: AWS::IAM::Role
@@ -58,7 +61,7 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubRepo}:environment:production:ref:refs/heads/main
+                token.actions.githubusercontent.com:sub: !Sub ${OidcSubjectPrefix}:environment:production:ref:refs/heads/main
       Policies:
         - PolicyName: deploy
           PolicyDocument:

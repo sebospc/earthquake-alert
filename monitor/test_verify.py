@@ -458,3 +458,17 @@ long_gap = {"glan": {"uncovered_min": 90, "longest_gap_min": 90}}
 assert verify.verdict([], [], long_gap, {"sent": 0}, [], 1.0, (), (), CANARIES)[0] == "DEGRADED"
 assert verify.verdict([], [], long_gap, {"sent": 0}, [], 1.0)[0] == "FAIL"
 print("PASS canaries never FAIL: a lost signal, not a lost warning (both down at once included)")
+
+# One canary alone (general-santos, emulator 3; glan waits for its own host): certified, no pair.
+monitor.CANARIES = {"general-santos"}
+monitor.call = lambda method, path: {"sensors": [
+    {"id": "chaparral", "public": True, "lat": 3.72, "lon": -75.48},
+    {"id": "general-santos", "public": False, "lat": 6.11, "lon": 125.17},
+    {"id": "glan", "public": False, "lat": 5.82, "lon": 125.20},
+    {"id": "hinatuan", "public": False, "lat": 8.37, "lon": 126.34}]}
+assert [s["id"] for s in monitor.certified_sensors()] == ["chaparral", "general-santos"]
+alone = {k: v for k, v in gsantos.items() if k != "pair"}
+findings, _ = verify.classify([offshore], [], [alone], both_up, offshore["time"] + 7200)
+assert findings[0]["cause"] == f"{verify.UNEXPLAINED}; {verify.NO_CONTROL}", findings[0]["cause"]
+assert verify.verdict(findings, [], {}, {"sent": 0}, [], 1.0, (), (), monitor.CANARIES)[0] == "DEGRADED"
+print("PASS a lone canary is certified from MONITOR_CANARIES, catalog rules, capped at DEGRADED")

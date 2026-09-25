@@ -17,9 +17,9 @@ read -r image subnet security_group key_name < <(aws ec2 describe-instances --re
 aws ec2 authorize-security-group-ingress --region "$REGION" --group-id "$security_group" \
   --ip-permissions "IpProtocol=tcp,FromPort=8787,ToPort=8787,UserIdGroupPairs=[{GroupId=$security_group,Description=receptor hosts to the gateway forwarder}]" \
   --tag-specifications 'ResourceType=security-group-rule,Tags=[{Key=project,Value=aea-lab}]' >/dev/null 2>&1 \
-  || aws ec2 describe-security-group-rules --region "$REGION" --filters "Name=group-id,Values=$security_group" \
+  || [[ $(aws ec2 describe-security-group-rules --region "$REGION" --filters "Name=group-id,Values=$security_group" \
        --query "SecurityGroupRules[?FromPort==\`8787\` && ReferencedGroupInfo.GroupId=='$security_group'] | [0].SecurityGroupRuleId" \
-       --output text | grep -q '^sgr-' || { echo "LAUNCH_FAILED: no 8787 rule" >&2; exit 1; }
+       --output text) == sgr-* ]] || { echo "LAUNCH_FAILED: no 8787 rule" >&2; exit 1; }
 
 instance_id=$(aws ec2 run-instances --region "$REGION" --image-id "$image" --instance-type r8i.large \
   --subnet-id "$subnet" --security-group-ids "$security_group" --key-name "$key_name" \

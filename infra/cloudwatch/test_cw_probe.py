@@ -51,6 +51,11 @@ assert [metric["Name"] for metric in directive["Metrics"]] == ["GatewayUp", "Unc
 assert document["GatewayUp"] == 1 and directive["Dimensions"] == [["Host"]] and "Host" in document
 print("PASS EMF document")
 
+meminfo = "MemTotal: 16079000 kB\nMemAvailable: 1258291 kB\nSwapTotal: 4194300 kB\nSwapFree: 4091900 kB\n"
+assert probe.memory_metrics(meminfo) == {"SwapUsedMB": 100, "MemAvailableMB": 1228}
+assert probe.memory_metrics("MemAvailable: 2048 kB\n")["SwapUsedMB"] == 0, "no swap configured = 0 used"
+print("PASS memory metrics from /proc/meminfo")
+
 # main(): no network, no adb, no agent, no journal. Metrics captured from what would go over UDP.
 work = tempfile.mkdtemp()
 probe.STATE_FILE = os.path.join(work, "state.json")
@@ -61,6 +66,7 @@ probe.send = lambda document: sent.append(json.loads(document))
 probe.adb = lambda serial, *args, timeout=60: b'{"event":"x"}\n'
 journal_now = []
 probe.read_journal = lambda now: journal_now
+probe.read_meminfo = lambda: "MemAvailable: 4096000 kB\nSwapTotal: 0 kB\nSwapFree: 0 kB\n"
 
 
 def run(now, status):

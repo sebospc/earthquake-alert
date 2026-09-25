@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Feeds the CloudWatch alarms and ships the listener evidence. Runs every minute.
 
-Every run: GatewayUp and UncoveredReceptors from the local /status, sent first so nothing
-later can hold them back. Then LocationAgeMaxSeconds: the worst GMS location age over this
+Every run: GatewayUp and UncoveredReceptors from the local /status, plus SwapUsedMB and
+MemAvailableMB from /proc/meminfo, sent first so nothing later can hold them back. Then LocationAgeMaxSeconds: the worst GMS location age over this
 host's receptors, read from sensor-health's AEA_LOCATION_AGE lines in the journal (one
 source of truth, the probe does not measure it again).
 Every SLOW_EVERY_MIN minutes: the new bytes of each receptor's on-device evidence, appended
@@ -37,6 +37,19 @@ def receptors(sensor_map_path):
     """serial -> sensor id. The map also holds relay keys: they never leave this function."""
     with open(sensor_map_path) as sensor_map:
         return {fields[0]: fields[1] for fields in (line.split() for line in sensor_map) if len(fields) >= 2}
+
+
+def memory_metrics(meminfo_text):
+    """SwapUsedMB pages when the emergency swapfile is in real use: the host is over its RAM
+    budget and an emulator may page out during an alert. MemAvailableMB is for the record."""
+    kib = {line.split(":")[0]: int(line.split()[1]) for line in meminfo_text.splitlines() if ":" in line}
+    return {"SwapUsedMB": (kib.get("SwapTotal", 0) - kib.get("SwapFree", 0)) // 1024,
+            "MemAvailableMB": kib["MemAvailable"] // 1024}
+
+
+def read_meminfo():
+    with open("/proc/meminfo") as meminfo:
+        return meminfo.read()
 
 
 def uncovered_count(status, expected_ids):
@@ -145,7 +158,8 @@ def main(sensor_map_path, now=None):
     serial_to_id = receptors(sensor_map_path)
     status = read_status()
     send(emf({"GatewayUp": int(status is not None),
-              "UncoveredReceptors": uncovered_count(status, serial_to_id.values())}, {}))
+              "UncoveredReceptors": uncovered_count(status, serial_to_id.values()),
+              **memory_metrics(read_meminfo())}, {}))
 
     worst_age, ages = location_age_seconds(read_journal(now), serial_to_id.values(), now)
     send(emf({"LocationAgeMaxSeconds": round(worst_age)}, {sensor_id: {"location_age_s": round(age)}

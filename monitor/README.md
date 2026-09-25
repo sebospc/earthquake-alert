@@ -37,7 +37,10 @@ Mac makes no rows or downtime of its own. The control poll stops at the same mom
 misses on one AWS receptor in 7 days, with no hit in between, is DEGRADED: "near threshold" can
 hide a real failure once, not every week. Canary pairs (`MONITOR_CANARY_PAIRS=a:b`,
 docs/siting-canaries.md) control each other. If the partner was covered and inside the radius:
-both missing is "Google did not alert", only one missing is FAIL.
+both missing is "Google did not alert", only one missing is FAIL. Canaries (`MONITOR_CANARIES`, plus the ids of
+any pair) are not public but are certified; a canary never makes the day worse than DEGRADED, because
+nobody gets alerts through it. List a canary only once it runs: a listed canary that is down reads as
+uncovered.
 
 The rules and thresholds ("expected", the radius, NEAR) come from `scripts/lab.py`, which is
 imported without touching it. The GPS location lowers the verdict to DEGRADED if it is older than 1 h on a receptor with
