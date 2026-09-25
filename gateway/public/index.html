@@ -30,11 +30,11 @@
 </p>
 
 <section id="ios-install" hidden>
-  <h2>En iPhone, primero agrégala a la pantalla de inicio</h2>
+  <h2>En iPhone, primero agréguela a la pantalla de inicio</h2>
   <ol>
-    <li>Toca el botón Compartir de Safari.</li>
-    <li>Elige "Agregar a pantalla de inicio".</li>
-    <li>Abre la app desde el ícono nuevo y vuelve a tocar "Activar alertas".</li>
+    <li>Toque el botón Compartir de Safari.</li>
+    <li>Elija "Agregar a pantalla de inicio".</li>
+    <li>Abra la app desde el ícono nuevo y vuelva a tocar "Activar alertas".</li>
   </ol>
   <p>Necesita iOS 16.4 o superior.</p>
 </section>
@@ -56,14 +56,14 @@
     la callan por completo.
   </p>
   <p>
-    Para permitirla: Ajustes &gt; Concentración, entra a cada modo que uses y en
-    "Apps permitidas" agrega Sismos.
+    Para permitirla: Ajustes &gt; Concentración, entre a cada modo que use y en
+    "Apps permitidas" agregue Sismos.
   </p>
 </section>
 
 <p><small>
-  Tu ubicación se usa solo en este teléfono para elegir el sensor más cercano. Al servidor
-  solo llega el nombre del sensor, nunca tus coordenadas.
+  Su ubicación se usa solo en este teléfono para elegir el sensor más cercano. Al servidor
+  solo llega el nombre del sensor, nunca sus coordenadas.
 </small></p>
 
 <script type="module">
@@ -89,7 +89,7 @@ async function fetchJson(path, options = {}) {
 function currentPosition() {
   return new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(
     position => resolve({ lat: position.coords.latitude, lon: position.coords.longitude }),
-    () => reject(new Error("No se pudo obtener tu ubicación. Revisa el permiso de ubicación.")),
+    () => reject(new Error("No se pudo obtener su ubicación. Revise el permiso de ubicación.")),
     { maximumAge: 10 * 60_000, timeout: 20_000 }
   ));
 }
@@ -159,7 +159,7 @@ async function activate() {
   message.textContent = "";
   try {
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
-      throw new Error("Este navegador no admite alertas. En iPhone, agrega la página a la pantalla de inicio primero.");
+      throw new Error("Este navegador no admite alertas. En iPhone, agregue la página a la pantalla de inicio primero.");
     }
     // Safari shows the prompt only from a direct tap, so it has to come before any await.
     const permission = await Notification.requestPermission();

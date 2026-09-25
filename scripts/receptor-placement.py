@@ -3,8 +3,8 @@
 
     receptor-placement.py <devices.json> <sensors.json> <alerts.json> <proposals.json>
 
-Demand is the 0.1° cell a phone registers when no receptor covers it (docs/ios-contract.md,
-"Outside coverage"), counted only once APNs accepted a push to that phone (verified_at).
+Demand is the 0.1° cell a phone registers when no receptor covers it, or covers it only for
+strong quakes (docs/ios-contract.md, "Outside coverage"), counted only once APNs accepted a push to that phone (verified_at).
 Cells within 31 km (the M4.5 radius) are grouped; each group scores
     phones × max(AEA alerts per year at its centroid, HAZARD_FLOOR_PER_YEAR)
 with alerts from Allen et al. 2025 (scripts/aea-alerts-colombia.json), counted as in
@@ -46,7 +46,8 @@ def cell_center(cell):
 def demand_by_cell(devices):
     counts = {}
     for device in devices.values():
-        if device.get("demand_cell") and device.get("verified_at") and not device.get("sensor_ids"):
+        # A phone with sensor_ids and a cell is "limited": far receptors, strong quakes only.
+        if device.get("demand_cell") and device.get("verified_at"):
             counts[device["demand_cell"]] = counts.get(device["demand_cell"], 0) + 1
     return {cell: phones for cell, phones in counts.items() if phones >= MIN_CELL_PHONES}
 

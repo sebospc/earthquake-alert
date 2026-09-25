@@ -100,8 +100,10 @@ Goal: a user outside coverage leaves a signal, and enough signal in one area wit
 quake risk becomes a receptor there. Today the phone never sends its location, and the app
 says so. This design keeps that: the phone sends only a coarse cell, which it computes itself.
 
-1. Demand record. When no public receptor is within `partial_km` (78), the app registers
-   with `demand_cell` instead of `sensor_ids`. The cell is a 0.1° grid (about 11 km):
+1. Demand record. When no receptor is eligible, the app registers with `demand_cell`
+   instead of `sensor_ids`. When only far receptors serve it (level "limited", strong quakes
+   only), it sends `demand_cell` together with `sensor_ids`, and the cell counts the same
+   (`docs/ios-contract.md`). The cell is a 0.1° grid (about 11 km):
    `floor(lat*10),floor(lon*10)`, for example `"37,-755"`. It lives on the device record,
    so there is one cell per device, no extra id, and it goes away with the token (410 or
    DELETE). The app shows the same "Tu zona todavía no tiene cobertura." as today.
@@ -126,8 +128,8 @@ says so. This design keeps that: the phone sends only a coarse cell, which it co
    is only used or shown with 3 or more devices.
 
 Changes needed:
-- `POST /devices`: accept `demand_cell` with no `sensor_ids` (exactly one of the two),
-  returning `201 {"sensor_ids": [], "demand_cell": ...}`. Leaving coverage re-registers
+- `POST /devices`: accept `demand_cell` with no `sensor_ids` (since 2026-09-25 also both,
+  for "limited"), returning `201 {"sensor_ids": [], "demand_cell": ...}`. Leaving coverage re-registers
   with a cell instead of DELETE. ios-contract: new field, new step in the location flow.
 - Coverage push: `kind: "coverage"` with `reason: "new_receptor"`. The app then downloads
   `sensors.json` again and registers.

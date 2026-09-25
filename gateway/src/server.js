@@ -15,6 +15,8 @@ const MAX_FUTURE_MS = 5 * 60_000;
 const MAX_SUBSCRIPTIONS = 10_000;
 const MAX_DEVICES = 10_000;
 const MAX_SENSORS_PER_DEVICE = 3;
+// A far phone follows a receptor for strong quakes only; below 4.0 or above 7.0 is a bug.
+const MIN_MAGNITUDE_RANGE = [4.0, 7.0];
 // Two sensors that saw one quake report origins a few seconds apart at most.
 const SAME_QUAKE_WINDOW_MS = 30_000;
 // Apple rejects provider tokens older than an hour and throttles fresher refreshes than 20 min.
@@ -175,8 +177,8 @@ function userText(event, late, originAgeMs) {
   return {
     title: "Alerta de sismo",
     body: magnitude === null
-      ? "Posible sismo cerca de tu zona. Protéjase ahora."
-      : `Sismo M${magnitude.toFixed(1)} cerca de tu zona. Protéjase ahora.`
+      ? "Posible sismo cerca de su zona. Protéjase ahora."
+      : `Sismo M${magnitude.toFixed(1)} cerca de su zona. Protéjase ahora.`
   };
 }
 
@@ -197,11 +199,12 @@ export function createProviderToken({ teamId, keyId, privateKey }, now = Date.no
 
 /**
  * Never rejects: { token_suffix, status, reason, sent_at, delivered_at }, status -1 when APNs
- * never answered.
+ * never answered. `payload` is a string, or a function of the send time in epoch ms.
  */
 function apnsRequest(client, token, headers, payload) {
   return new Promise(resolve => {
-    const sentAt = new Date().toISOString();
+    const sentAtMs = Date.now();
+    const sentAt = new Date(sentAtMs).toISOString();
     let request;
     try {
       request = client.request({ ":method": "POST", ":path": `/3/device/${token}`, ...headers });
@@ -234,7 +237,7 @@ function apnsRequest(client, token, headers, payload) {
       if (APNS_GONE_REASONS.has(reason)) status = 410;
       resolve({ token_suffix: token.slice(-8), status, reason, sent_at: sentAt, delivered_at: deliveredAt(status) });
     });
-    request.end(payload);
+    request.end(typeof payload === "function" ? payload(sentAtMs) : payload);
   });
 }
 
@@ -248,9 +251,12 @@ const finiteOrNull = value => (Number.isFinite(value) ? value : null);
 // When the push service accepted it, for the certifier's "accepted to first delivery".
 const deliveredAt = status => (status >= 200 && status < 300 ? new Date().toISOString() : null);
 
-/** The structured fields are there so the app can decide on AlarmKit by itself. */
+/**
+ * The structured fields are there so the app can decide on AlarmKit by itself. `sent_at_ms`
+ * is stamped per phone as its request goes out: the NSE logs arrival against it (APNs leg).
+ */
 function apnsAlertPayload(event) {
-  return JSON.stringify({
+  const withoutClosingBrace = JSON.stringify({
     aps: {
       alert: { title: event.title, body: event.body },
       sound: "default",
@@ -267,7 +273,9 @@ function apnsAlertPayload(event) {
     time_occurred_s: finiteOrNull(event.time_occurred_s),
     late: event.late,
     expires_at: event.expires_at
-  });
+  }).slice(0, -1);
+  // ponytail: string splice, not a JSON.stringify per phone; it runs 10k times per quake.
+  return sentAtMs => `${withoutClosingBrace},"sent_at_ms":${sentAtMs}}`;
 }
 
 function isPushServiceEndpoint(endpoint) {
@@ -314,20 +322,34 @@ function validateDeviceToken(token) {
  */
 export function validateDevice(request, publicSensorIds) {
   const { device_token: token, sensor_ids: ids, demand_cell: demandCell, platform,
-    apns_env: apnsEnv = "production" } = request;
+    apns_env: apnsEnv = "production", min_magnitude: minMagnitude } = request;
   if (platform !== "ios") throw new Error("invalid platform");
   // A development build's token only works against the sandbox, and the other way round.
   if (!Object.hasOwn(APNS_HOSTS, apnsEnv)) throw new Error("invalid apns_env");
-  // Outside coverage the phone sends only its 0.1° cell, never coordinates or sensors.
-  if (demandCell !== undefined) {
-    if (ids !== undefined) throw new Error("send sensor_ids or demand_cell, not both");
+  // Outside coverage the phone sends only its 0.1° cell, never coordinates or sensors. With
+  // "limited" coverage it sends both: alerts follow the sensors, the cell asks for a closer one.
+  if (demandCell !== undefined && ids === undefined) {
+    if (minMagnitude !== undefined) throw new Error("invalid min_magnitude");
     return { token: validateDeviceToken(token), sensorIds: [], demandCell: validateDemandCell(demandCell), apnsEnv };
   }
   if (!Array.isArray(ids) || ids.length < 1 || ids.length > MAX_SENSORS_PER_DEVICE
       || new Set(ids).size !== ids.length || !ids.every(id => publicSensorIds.has(id))) {
     throw new Error("invalid sensor_ids");
   }
-  return { token: validateDeviceToken(token), sensorIds: ids, demandCell: null, apnsEnv };
+  return { token: validateDeviceToken(token), sensorIds: ids,
+    demandCell: demandCell === undefined ? null : validateDemandCell(demandCell), apnsEnv,
+    minMagnitude: validateMinMagnitude(minMagnitude, ids) };
+}
+
+/** `{ sensorId: magnitude }` over a subset of the device's sensors; {} when absent. */
+function validateMinMagnitude(minMagnitude, sensorIds) {
+  if (minMagnitude === undefined) return {};
+  const [lowest, highest] = MIN_MAGNITUDE_RANGE;
+  const valid = minMagnitude !== null && typeof minMagnitude === "object" && !Array.isArray(minMagnitude)
+    && Object.entries(minMagnitude).every(([sensorId, magnitude]) => sensorIds.includes(sensorId)
+      && typeof magnitude === "number" && magnitude >= lowest && magnitude <= highest);
+  if (!valid) throw new Error("invalid min_magnitude");
+  return { ...minMagnitude };
 }
 
 /** "floor(lat*10),floor(lon*10)", e.g. "37,-755": a cell of about 11 km. */
@@ -423,9 +445,10 @@ function createDeviceStore(file) {
     apnsEnvOf: token => byToken[token]?.apns_env ?? "production",
     /** When APNs first accepted a push to this token; demand only counts after it. */
     verifiedAt: token => byToken[token]?.verified_at ?? null,
+    minMagnitudeOf: (token, sensorId) => byToken[token]?.min_magnitude?.[sensorId] ?? null,
     // Replaces the whole set: the app calls this every time the phone moves. One demand
     // cell per token at most, so one phone can only ever weigh one.
-    put(token, sensorIds, apnsEnv, demandCell = null) {
+    put(token, sensorIds, apnsEnv, demandCell = null, minMagnitude = {}) {
       if (!byToken[token] && Object.keys(byToken).length >= MAX_DEVICES) {
         throw new Error("device limit reached");
       }
@@ -433,7 +456,7 @@ function createDeviceStore(file) {
       const told = Object.fromEntries(Object.entries(byToken[token]?.coverage_told ?? {})
         .filter(([sensorId]) => sensorIds.includes(sensorId)));
       byToken[token] = { platform: "ios", sensor_ids: sensorIds, apns_env: apnsEnv, coverage_told: told,
-        demand_cell: demandCell, verified_at: byToken[token]?.verified_at ?? null };
+        demand_cell: demandCell, min_magnitude: minMagnitude, verified_at: byToken[token]?.verified_at ?? null };
       return store.persist();
     },
     setVerified(token, at) {
@@ -767,7 +790,7 @@ export function createServer(config) {
     return providerToken.value;
   }
 
-  function sendApns(token, payload, collapseId, deadlineMs, slot) {
+  function sendApns(token, payload, collapseId, deadlineMs, slot, pushType = "alert") {
     if (config.dryRun) {
       return Promise.resolve({ token_suffix: token.slice(-8), status: 200, dry_run: true,
         sent_at: new Date().toISOString(), delivered_at: deliveredAt(200) });
@@ -781,8 +804,9 @@ export function createServer(config) {
     return apnsRequest(apnsClient(devices.apnsEnvOf(token), slot), token, {
       authorization: `bearer ${bearer}`,
       "apns-topic": config.bundleId,
-      "apns-push-type": "alert",
-      "apns-priority": "10",
+      "apns-push-type": pushType,
+      // Apple rejects priority 10 on a background push.
+      "apns-priority": pushType === "background" ? "5" : "10",
       // Absolute time: APNs drops it once the warning is useless instead of delivering late.
       "apns-expiration": String(Math.floor(deadlineMs / 1000)),
       "apns-collapse-id": collapseId
@@ -811,10 +835,18 @@ export function createServer(config) {
       .filter(entry => entry.originMs !== originMs));
   }
 
-  /** Never rejects. With `originMs`, a token already told about that quake is skipped. */
-  function apnsToSensor(sensorId, payload, collapseId, deadlineMs, originMs = null) {
+  /**
+   * Never rejects. With `originMs`, a token already told about that quake is skipped. A token
+   * whose `min_magnitude` for this sensor is above `magnitude` is skipped before it claims the
+   * quake, so a closer sensor can still reach it. Unknown magnitude: sent, when unsure we alert.
+   */
+  function apnsToSensor(sensorId, payload, collapseId, deadlineMs, originMs = null, magnitude = null) {
     const now = Date.now();
-    return apnsToTokens(devices.tokensFor(sensorId)
+    const wantsMagnitude = token => {
+      const minimum = devices.minMagnitudeOf(token, sensorId);
+      return minimum === null || !Number.isFinite(magnitude) || magnitude >= minimum;
+    };
+    return apnsToTokens(devices.tokensFor(sensorId).filter(wantsMagnitude)
       .filter(token => originMs === null || claimQuake(token, originMs, now)),
     payload, collapseId, deadlineMs, originMs);
   }
@@ -852,7 +884,7 @@ export function createServer(config) {
     };
     const [webPush, apns] = await Promise.all([
       pushToSensor(event.sensor_id, message, deadlineMs),
-      apnsToSensor(event.sensor_id, apnsAlertPayload(event), tag, deadlineMs, originMs)
+      apnsToSensor(event.sensor_id, apnsAlertPayload(event), tag, deadlineMs, originMs, event.magnitude)
     ]);
     updateDegraded(event.sensor_id, "webpush", webPush);
     updateDegraded(event.sensor_id, "apns", apns);
@@ -948,8 +980,8 @@ export function createServer(config) {
 
   function coveragePayload(sensorId, covered) {
     const message = covered
-      ? { title: "Cobertura restablecida", body: "Las alertas de tu zona vuelven a funcionar." }
-      : { title: "Sin cobertura en tu zona", body: "No confíes en esta app por ahora." };
+      ? { title: "Cobertura restablecida", body: "Las alertas de su zona vuelven a funcionar." }
+      : { title: "Sin cobertura en su zona", body: "No confíe en esta app por ahora." };
     return {
       message,
       // A phone may follow up to 3 sensors: sensor_id and covered let the app decide
@@ -996,12 +1028,30 @@ export function createServer(config) {
   async function handleDevice(request, response, raw) {
     if (!allowRegistration(request, response, "devices")) return;
     const device = validateDevice(JSON.parse(raw.toString("utf8")), publicSensorIds);
-    await devices.put(device.token, device.sensorIds, device.apnsEnv, device.demandCell);
-    sendJson(response, 201, device.demandCell
-      ? { sensor_ids: [], demand_cell: device.demandCell, apns_env: device.apnsEnv }
-      : { sensor_ids: device.sensorIds, apns_env: device.apnsEnv });
-    if (device.demandCell) tellNoCoverageYet(device.token);
+    await devices.put(device.token, device.sensorIds, device.apnsEnv, device.demandCell, device.minMagnitude);
+    sendJson(response, 201, {
+      sensor_ids: device.sensorIds,
+      ...(device.demandCell && { demand_cell: device.demandCell }),
+      ...(Object.keys(device.minMagnitude ?? {}).length > 0 && { min_magnitude: device.minMagnitude }),
+      apns_env: device.apnsEnv
+    });
+    if (device.sensorIds.length === 0) tellNoCoverageYet(device.token);
     else tellNewDeviceAboutLostCoverage(device.token, device.sensorIds);
+    if (device.demandCell && device.sensorIds.length > 0) verifySilently(device.token);
+  }
+
+  /**
+   * A "limited" phone has receptors, so "no coverage yet" would be false. A background push
+   * shows nothing and its APNs 200 verifies the token just the same. Retried on the next
+   * registration while unverified.
+   */
+  function verifySilently(token) {
+    if (devices.verifiedAt(token)) return;
+    const payload = JSON.stringify({ aps: { "content-available": 1 }, kind: "verify" });
+    sendApns(token, payload, "verify", Date.now() + COVERAGE_PUSH_TTL_MS, 0, "background")
+      .then(result => isDelivered(result.status)
+        ? devices.setVerified(token, new Date().toISOString()) : undefined)
+      .catch(error => console.error(`verify push failed: ${error.message}`));
   }
 
   /**
@@ -1010,7 +1060,7 @@ export function createServer(config) {
    */
   function tellNoCoverageYet(token) {
     if (devices.verifiedAt(token)) return;
-    const message = { title: "Sin cobertura en tu zona", body: "Tu zona todavía no tiene cobertura." };
+    const message = { title: "Sin cobertura en su zona", body: "Su zona todavía no tiene cobertura." };
     const payload = JSON.stringify({
       aps: { alert: message, sound: "default", "interruption-level": "active" },
       kind: "coverage", sensor_id: null, covered: false, reason: "no_receptor"

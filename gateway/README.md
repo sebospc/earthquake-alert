@@ -20,7 +20,7 @@ node --env-file=.env src/server.js   # Node 20+; on 18 export the variables firs
 | `POST /devices` | `{device_token, sensor_ids: [1..3], platform: "ios"}` from the iOS app. Replaces the token's sensors on every call. No location is received |
 | `GET /status` | per sensor: `covered`, `stale`, `aea_ok`, `aea_stale`, and the last check times |
 
-`RELAY_KILL_SWITCH=1` stops all forwarding. Subscribers get a no-coverage push (Spanish, "Sin cobertura en tu zona").
+`RELAY_KILL_SWITCH=1` stops all forwarding. Subscribers get a no-coverage push (Spanish, "Sin cobertura en su zona").
 
 ## Open risk: a dead gateway warns nobody
 

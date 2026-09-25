@@ -121,7 +121,7 @@ function alertFrom(sensorId, overrides = {}) {
     captured_at: new Date(now).toISOString(),
     expires_at: new Date(now + 180_000).toISOString(),
     title: "Alerta de sismo",
-    body: "Sismo M4.5 cerca de tu zona. Protéjase ahora.",
+    body: "Sismo M4.5 cerca de su zona. Protéjase ahora.",
     interruption_level: "time-sensitive",
     magnitude: 4.5,
     distance_km: 19,
@@ -316,6 +316,11 @@ test("latency stamps: an APNs push is stamped when it leaves, not when APNs answ
   const [result] = dispatch.apns;
   assert.ok(Date.parse(dispatch.accepted_at) <= Date.parse(result.sent_at), JSON.stringify(dispatch));
   assert.ok(Date.parse(result.delivered_at) - Date.parse(result.sent_at) >= 140, JSON.stringify(result));
+  // The NSE measures the APNs leg against it: the same instant, in the payload, per phone.
+  const [push] = apns.pushes;
+  assert.equal(push.payload.sent_at_ms, Date.parse(result.sent_at));
+  assert.equal(push.payload.kind, "alert");
+  assert.equal(push.payload.aps["mutable-content"], 1);
 });
 
 test("QA-04 a failed evidence write does not push twice when the sensor retries", async t => {
@@ -487,10 +492,10 @@ test("contract: a fake iPhone following 2 sensors gets ONE alert, shaped as the 
     assert.equal(Number(headers["apns-expiration"]), Math.floor(Date.parse(fromA.expires_at) / 1000));
     assert.equal(headers["apns-collapse-id"], `quake:${Math.round(origin * 1000 / 60_000)}`);
     assert.deepEqual(Object.keys(payload).sort(), ["aps", "distance_km", "event_id", "expires_at",
-      "kind", "late", "magnitude", "sensor_id", "time_occurred_s"]);
+      "kind", "late", "magnitude", "sensor_id", "sent_at_ms", "time_occurred_s"]);
     assert.deepEqual(payload.aps, {
       // The gateway writes the text itself; the receiver's title and body are never shown.
-      alert: { title: "Alerta de sismo", body: "Sismo M4.8 cerca de tu zona. Protéjase ahora." },
+      alert: { title: "Alerta de sismo", body: "Sismo M4.8 cerca de su zona. Protéjase ahora." },
       sound: "default",
       "interruption-level": "time-sensitive",
       "thread-id": "earthquake-alerts",
@@ -655,8 +660,8 @@ test("the gateway writes the alert text, whatever the receiver sent", async t =>
   await wait(150);
 
   const byToken = Object.fromEntries(apns.pushes.map(push => [push.token, push.payload.aps.alert]));
-  assert.deepEqual(byToken[PHONE], { title: "Alerta de sismo", body: "Sismo M4.5 cerca de tu zona. Protéjase ahora." });
-  assert.deepEqual(byToken[OTHER_PHONE], { title: "Alerta de sismo", body: "Posible sismo cerca de tu zona. Protéjase ahora." });
+  assert.deepEqual(byToken[PHONE], { title: "Alerta de sismo", body: "Sismo M4.5 cerca de su zona. Protéjase ahora." });
+  assert.deepEqual(byToken[OTHER_PHONE], { title: "Alerta de sismo", body: "Posible sismo cerca de su zona. Protéjase ahora." });
   assert.equal(apns.pushes.some(push => /km/.test(JSON.stringify(push.payload.aps))), false, "a distance reached a phone");
 });
 
@@ -674,7 +679,7 @@ test("demand: a phone outside coverage leaves only its 0.1° cell, counted after
   const told = apns.all.filter(push => push.token === PHONE);
   assert.equal(told.length, 1);
   assert.deepEqual(told[0].payload, {
-    aps: { alert: { title: "Sin cobertura en tu zona", body: "Tu zona todavía no tiene cobertura." },
+    aps: { alert: { title: "Sin cobertura en su zona", body: "Su zona todavía no tiene cobertura." },
       sound: "default", "interruption-level": "active" },
     kind: "coverage", sensor_id: null, covered: false, reason: "no_receptor"
   });
@@ -698,9 +703,6 @@ test("demand: a phone outside coverage leaves only its 0.1° cell, counted after
   for (const cell of ["37.5,-755", "900,0", "0,1800", "a,b", 37, ""]) {
     assert.equal((await withCell(OTHER_PHONE, cell)).status, 400, String(cell));
   }
-  const both = await request(port, "POST", "/devices", JSON.stringify(
-    { device_token: OTHER_PHONE, sensor_ids: ["chaparral"], demand_cell: "37,-755", platform: "ios" }));
-  assert.equal(both.status, 400);
 
   // A demand-only phone can leave too.
   await withCell(OTHER_PHONE, "-1,-800");
@@ -716,6 +718,98 @@ test("demand: a token APNs never accepts is stored but never verified", async t 
   const device = JSON.parse(await readFile(config.devicesFile, "utf8"))[PHONE];
   assert.equal(device.demand_cell, "37,-755");
   assert.equal(device.verified_at, null);
+});
+
+// "Limited" tier: receptors far away, only strong quakes reach the phone. It follows them for
+// alerts and also asks for a closer receptor with its cell.
+test("demand: a limited phone sends sensor_ids and demand_cell; alerts follow the sensors, the cell counts", async t => {
+  const apns = await startApns(t);
+  const { port, config } = await startGateway(t, { apnsHost: apns.url });
+  const limited = cell => request(port, "POST", "/devices", JSON.stringify(
+    { device_token: PHONE, sensor_ids: ["chaparral"], demand_cell: cell, platform: "ios" }));
+
+  const answer = await limited("37,-755");
+  assert.equal(answer.status, 201);
+  assert.deepEqual(JSON.parse(answer.body), { sensor_ids: ["chaparral"], demand_cell: "37,-755", apns_env: "production" });
+  await wait(200);
+  // Verified by a push that shows nothing: "no coverage yet" would be false for this phone.
+  // chaparral is not reporting in this test, so the phone also gets its "Sin cobertura".
+  const notCoverage = () => apns.all.filter(push => push.token === PHONE && push.payload.kind !== "coverage");
+  const [verify, ...more] = notCoverage();
+  assert.equal(more.length, 0, JSON.stringify(more));
+  assert.deepEqual(verify.payload, { aps: { "content-available": 1 }, kind: "verify" });
+  assert.equal(verify.headers["apns-push-type"], "background");
+  assert.equal(verify.headers["apns-priority"], "5");
+  const device = JSON.parse(await readFile(config.devicesFile, "utf8"))[PHONE];
+  assert.deepEqual([device.sensor_ids, device.demand_cell], [["chaparral"], "37,-755"]);
+  assert.ok(Date.parse(device.verified_at), "an accepted push did not verify the token");
+
+  // Once verified, registering again sends nothing more.
+  await limited("38,-755");
+  await wait(200);
+  assert.equal(notCoverage().length, 1);
+
+  await sendEvent(port, alertFrom("chaparral"));
+  await wait(300);
+  const alerts = apns.all.filter(push => push.payload.kind === "alert");
+  assert.deepEqual(alerts.map(push => push.token), [PHONE]);
+  assert.equal(alerts[0].headers["apns-push-type"], "alert");
+
+  // Both fields are still validated.
+  assert.equal((await limited("37.5,-755")).status, 400);
+  const unknownSensor = await request(port, "POST", "/devices", JSON.stringify(
+    { device_token: PHONE, sensor_ids: ["atlantis"], demand_cell: "37,-755", platform: "ios" }));
+  assert.equal(unknownSensor.status, 400);
+});
+
+test("demand: a limited phone APNs never accepts is not verified", async t => {
+  const { port, config } = await startGateway(t, { apnsHost: "http://127.0.0.1:1" });
+  await request(port, "POST", "/devices", JSON.stringify(
+    { device_token: PHONE, sensor_ids: ["chaparral"], demand_cell: "37,-755", platform: "ios" }));
+  await wait(300);
+  assert.equal(JSON.parse(await readFile(config.devicesFile, "utf8"))[PHONE].verified_at, null);
+});
+
+// A far phone follows a receptor for strong quakes only: the weak ones it would not feel are
+// false alarms. Unknown magnitude still goes out: when unsure, alert.
+test("min_magnitude: a far phone skips weaker alerts from that receptor, never an unknown one", async t => {
+  const apns = await startApns(t);
+  const { port, config } = await startGateway(t, { apnsHost: apns.url });
+  const answer = await register(port, PHONE, ["chaparral", "quibdo"], { min_magnitude: { chaparral: 5.5 } });
+  assert.equal(answer.status, 201);
+  assert.deepEqual(JSON.parse(answer.body),
+    { sensor_ids: ["chaparral", "quibdo"], min_magnitude: { chaparral: 5.5 }, apns_env: "production" });
+  await register(port, OTHER_PHONE, ["chaparral"]);
+  assert.deepEqual(JSON.parse(await readFile(config.devicesFile, "utf8"))[PHONE].min_magnitude, { chaparral: 5.5 });
+
+  const now = Math.floor(Date.now() / 1000);
+  const alertedFor = async event => {
+    apns.pushes.length = 0;
+    await sendEvent(port, event);
+    await wait(250);
+    return apns.pushes.filter(push => push.payload.kind === "alert").map(push => push.token).sort();
+  };
+  assert.deepEqual(await alertedFor(alertFrom("chaparral", { time_occurred_s: now - 270, magnitude: 5.49 })), [OTHER_PHONE]);
+  assert.deepEqual(await alertedFor(alertFrom("chaparral", { time_occurred_s: now - 230, magnitude: 5.5 })), [OTHER_PHONE, PHONE].sort());
+  assert.deepEqual(await alertedFor(alertFrom("chaparral", { time_occurred_s: now - 190, magnitude: null })), [OTHER_PHONE, PHONE].sort());
+  // The skip does not use up the quake: the same weak quake from a receptor with no minimum gets through.
+  const origin = now - 150;
+  assert.deepEqual(await alertedFor(alertFrom("chaparral", { time_occurred_s: origin, magnitude: 4.6 })), [OTHER_PHONE]);
+  assert.deepEqual(await alertedFor(alertFrom("quibdo", { time_occurred_s: origin + 2, magnitude: 4.6 })), [PHONE]);
+
+  // Registering without it clears it.
+  await register(port, PHONE, ["chaparral"]);
+  assert.deepEqual(await alertedFor(alertFrom("chaparral", { time_occurred_s: now - 60, magnitude: 4.5 })), [OTHER_PHONE, PHONE].sort());
+
+  for (const bad of [{ chaparral: 3.9 }, { chaparral: 7.1 }, { chaparral: "5.5" }, { chaparral: null },
+    { quibdo: 5.5 }, [5.5], null, 5.5]) {
+    assert.equal((await register(port, PHONE, ["chaparral"], { min_magnitude: bad })).status, 400, JSON.stringify(bad));
+  }
+  assert.equal((await register(port, PHONE, ["chaparral"], { min_magnitude: { chaparral: 4.0 } })).status, 201);
+  assert.equal((await register(port, PHONE, ["chaparral"], { min_magnitude: { chaparral: 7.0 } })).status, 201);
+  const cellOnly = await request(port, "POST", "/devices", JSON.stringify(
+    { device_token: PHONE, demand_cell: "37,-755", min_magnitude: {}, platform: "ios" }));
+  assert.equal(cellOnly.status, 400, "min_magnitude without sensors");
 });
 
 // Demand-driven siting: a phone outside coverage registers only its 0.1° cell. It must never be

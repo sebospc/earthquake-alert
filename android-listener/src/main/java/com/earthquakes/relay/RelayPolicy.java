@@ -35,8 +35,8 @@ final class RelayPolicy {
      * (seen in the 24-sep Chaparral alert). distance_km still travels as its own field.
      */
     static String bodyFor(Float magnitude) {
-        if (magnitude == null) return "Posible sismo cerca de tu zona. Protéjase ahora.";
-        return String.format(Locale.ROOT, "Sismo M%.1f cerca de tu zona. Protéjase ahora.", magnitude);
+        if (magnitude == null) return "Posible sismo cerca de su zona. Protéjase ahora.";
+        return String.format(Locale.ROOT, "Sismo M%.1f cerca de su zona. Protéjase ahora.", magnitude);
     }
 
     /**

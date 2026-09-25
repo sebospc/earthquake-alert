@@ -12,7 +12,14 @@ import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs
 import { pathToFileURL } from "node:url";
 
 const AUTOPUSH_URL = "wss://push.services.mozilla.com/";
-const PING_EVERY_MS = 4 * 60_000;
+// A probe lives 60 s at the push service (gateway PROBE_TTL_MS). A socket that stops answering
+// was only noticed when TCP gave up, up to 16 min later (25-sep: one probe lost, one 23 s late).
+// Autopush answers the "{}" ping in ~150 ms, so an unanswered ping means a dead socket.
+const PING_EVERY_MS = 60_000;
+const PONG_WITHIN_MS = 10_000;
+// Autopush's side cuts every connection ~20 min in, going deaf seconds before the close.
+// Reconnecting ourselves first keeps the gap under a second.
+const RECYCLE_AFTER_MS = 15 * 60_000;
 const RECONNECT_MS = 10_000;
 
 const hmac = (key, data) => createHmac("sha256", key).update(data).digest();
@@ -53,7 +60,8 @@ function keysOf(channel) {
     publicKey: Buffer.from(channel.publicKey, "base64url"), auth: Buffer.from(channel.auth, "base64url") };
 }
 
-function run(dataDir, vapidPublicKey, sensorIds) {
+export function run(dataDir, vapidPublicKey, sensorIds, { Socket = WebSocket, pingEveryMs = PING_EVERY_MS,
+  pongWithinMs = PONG_WITHIN_MS, recycleAfterMs = RECYCLE_AFTER_MS, reconnectMs = RECONNECT_MS } = {}) {
   const statePath = `${dataDir}/push-state.json`;
   const pushesPath = `${dataDir}/pushes.jsonl`;
   const state = existsSync(statePath) ? JSON.parse(readFileSync(statePath, "utf8")) : { uaid: "", channels: {} };
@@ -70,16 +78,31 @@ function run(dataDir, vapidPublicKey, sensorIds) {
   function connect() {
     // No subprotocol: autopush does not echo "push-notification" back and undici then drops
     // the connection before it opens.
-    const socket = new WebSocket(AUTOPUSH_URL);
-    let pinger;
+    const socket = new Socket(AUTOPUSH_URL);
+    let pinger, pongCheck, recycler;
+    const stopTimers = () => { clearInterval(pinger); clearTimeout(pongCheck); clearTimeout(recycler); };
+    // A dead socket may never fire onclose: drop it and connect again without waiting for it.
+    const reconnectNow = reason => {
+      console.log(`${new Date().toISOString()} ${reason}, reconnecting`);
+      stopTimers();
+      socket.onclose = socket.onmessage = null;
+      socket.close();
+      setTimeout(connect, 0);
+    };
     const send = message => socket.send(JSON.stringify(message));
     socket.onopen = () => {
       console.log(`${new Date().toISOString()} connected`);
       send({ messageType: "hello", uaid: state.uaid, use_webpush: true,
         channelIDs: Object.values(state.channels).filter(c => c.endpoint).map(c => c.channelID) });
-      pinger = setInterval(() => send({}), PING_EVERY_MS);
+      pinger = setInterval(() => {
+        send({});
+        pongCheck ??= setTimeout(() => reconnectNow("no answer to ping"), pongWithinMs);
+      }, pingEveryMs);
+      recycler = setTimeout(() => reconnectNow("planned recycle"), recycleAfterMs);
     };
     socket.onmessage = ({ data }) => {
+      clearTimeout(pongCheck);
+      pongCheck = undefined;
       const message = JSON.parse(data);
       if (message.messageType === "hello") {
         // A different uaid means the server forgot us: every channel must register again.
@@ -112,8 +135,8 @@ function run(dataDir, vapidPublicKey, sensorIds) {
     };
     socket.onclose = ({ code }) => {
       console.log(`${new Date().toISOString()} closed ${code}, reconnecting`);
-      clearInterval(pinger);
-      setTimeout(connect, RECONNECT_MS);
+      stopTimers();
+      setTimeout(connect, reconnectMs);
     };
     socket.onerror = event => console.log(`${new Date().toISOString()} error ${event.message ?? ""}`);
   }

@@ -29,9 +29,13 @@ BUCARAMANGA_ALERTS = {"period": {"years": 1.0},
 # --- which demand counts --------------------------------------------------------------
 
 devices = {**phones("71,-732", 3), **phones("71,-732", 5, verified=False),
-           **phones("50,-760", 2), **phones("40,-750", 4, sensor_ids=["chaparral"])}
-assert placement.demand_by_cell(devices) == {"71,-732": 3}, placement.demand_by_cell(devices)
-print("PASS demand: verified phones only, 3 or more per cell, none that has a receptor")
+           **phones("50,-760", 2), **phones("40,-750", 2, sensor_ids=["chaparral"]),
+           **phones("40,-750", 1)}
+assert placement.demand_by_cell(devices) == {"71,-732": 3, "40,-750": 3}, placement.demand_by_cell(devices)
+# A phone that moved into coverage registers without a cell (the gateway stores null).
+covered = {"x": {"sensor_ids": ["chaparral"], "demand_cell": None, "verified_at": VERIFIED}} | phones("40,-750", 2)
+assert placement.demand_by_cell(covered) == {}, placement.demand_by_cell(covered)
+print("PASS demand: verified phones only, 3 or more per cell, limited phones (sensors + cell) count")
 
 # --- grouping and score ---------------------------------------------------------------
 

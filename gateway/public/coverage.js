@@ -33,7 +33,7 @@ export function nearestSensor(here, sensorList) {
 export const TIER_TEXT = {
   full: "Cobertura completa (sismos desde M4.5).",
   partial: "Cobertura parcial: solo sismos desde M5.0.",
-  none: "Tu zona todavía no tiene cobertura."
+  none: "Su zona todavía no tiene cobertura."
 };
 
 function formatAge(ms) {
@@ -53,11 +53,11 @@ export function coverageState(status, sensorId) {
     return { healthy: false, text: "No se pudo consultar el estado. Sin cobertura confirmada." };
   }
   if (!status.relay_enabled) {
-    return { healthy: false, text: "Reenvío detenido. Ahora no vas a recibir alertas." };
+    return { healthy: false, text: "Reenvío detenido. Ahora no va a recibir alertas." };
   }
   const sensor = status.sensors.find(entry => entry.id === sensorId);
   if (!sensor) {
-    return { healthy: false, text: "Tu sensor ya no existe. Vuelve a activar las alertas." };
+    return { healthy: false, text: "Su sensor ya no existe. Vuelva a activar las alertas." };
   }
   if (sensor.stale) {
     return { healthy: false, text: "El sensor no reporta hace más de 15 min. Sin cobertura por ahora." };

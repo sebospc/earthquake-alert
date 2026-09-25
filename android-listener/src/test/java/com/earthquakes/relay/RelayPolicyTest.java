@@ -26,8 +26,8 @@ public class RelayPolicyTest {
 
     @Test
     public void usesOwnWordsFromTheStructuredExtras() {
-        assertEquals("Sismo M4.5 cerca de tu zona. Protéjase ahora.", RelayPolicy.bodyFor(4.45852f));
-        assertEquals("Posible sismo cerca de tu zona. Protéjase ahora.", RelayPolicy.bodyFor(null));
+        assertEquals("Sismo M4.5 cerca de su zona. Protéjase ahora.", RelayPolicy.bodyFor(4.45852f));
+        assertEquals("Posible sismo cerca de su zona. Protéjase ahora.", RelayPolicy.bodyFor(null));
         // The distance is from the receptor, never from the phone: it must not reach the text.
         assertFalse(RelayPolicy.bodyFor(4.48f).contains("km"));
     }
