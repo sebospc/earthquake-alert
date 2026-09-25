@@ -31,7 +31,7 @@ FAKE_JOBS='gateway success\nandroid success\nios-core failure' deploys "ios-core
 FAKE_JOBS='gateway success\nandroid success' deploys "ios-core missing"
 FAKE_JOBS='gateway failure\nandroid success\nios-core success' refuses "gateway red" "gateway failure"
 FAKE_JOBS='android success\nios-core failure' refuses "gateway missing" "gateway missing"
-FAKE_JOBS='gateway-e2e success\nandroid success' refuses "only a job named like gateway" "gateway missing"
+FAKE_JOBS='lint-gateway success\nandroid success' refuses "only a job named like gateway" "gateway missing"
 FAKE_JOBS='gateway success\nandroid null\nios-core failure' refuses "android still running" "android null"
 FAKE_EVENT=pull_request FAKE_JOBS='gateway success' refuses "a PR run" "not a ci run of a push to main"
 ID='5;x' FAKE_JOBS='gateway success' refuses "a non-numeric id" "must be a number"
