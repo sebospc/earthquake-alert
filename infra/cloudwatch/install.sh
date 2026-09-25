@@ -83,7 +83,9 @@ systemctl enable --now aea-cw-journal.service aea-cw-probe.timer
 
 # Prove it: the agent runs and the probe reaches /status.
 sleep 5
-/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a status | grep -q '"status": "running"'
+# Captured, not piped into grep -q: under pipefail that exits 141 (QA-91).
+agent_status=$(/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a status)
+[[ $agent_status == *'"status": "running"'* ]] || { echo "CLOUDWATCH_INSTALL_FAILED: agent not running" >&2; exit 1; }
 systemctl start aea-cw-probe.service
 systemctl is-active --quiet aea-cw-journal.service
 echo "CLOUDWATCH_INSTALL_OK host=$instance_id"

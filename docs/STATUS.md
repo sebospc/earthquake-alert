@@ -9,6 +9,7 @@ Updated: 2026-09-24 18:40 UTC. Whoever finishes a piece of work updates this fil
 | AWS EC2 `i-0d1c0b6dd02e0ae61`, sa-east-1, spot r8i.large | receptors `chaparral` (emulator-5554) and `quibdo` (emulator-5556), gateway, sensor-health, watchdog | `ssh -i ~/.ssh/aea-lab.pem ubuntu@$(aws ec2 describe-instances --region sa-east-1 --instance-ids i-0d1c0b6dd02e0ae61 --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)`; `curl -s 127.0.0.1:8787/status`. The IP changes with every spot interruption |
 | Mac | control fleet RETIRED 2026-09-24 19:15 UTC: launchd job removed (plist kept as `aea-lab/com.earthquakes.aea-lab.plist.retired`), 4 emulators shut down. AVDs (with the personal Google account) still on disk | - |
 | Mac | certifier `monitor/monitor.py`, started by hand (not a service) | `docs/qa/cert/AAAA-MM-DD.md` |
+| AWS | CloudWatch (since 25-sep 00:30): logs + 5 alarms to SNS email (gateway down, receptor uncovered 10 min, AEA location > 21 h, AEA_NOT_OK, NUDGE_FAILED). Stacks aea-lab-cloudwatch, aea-lab-alarms-i-0d1c0b6dd02e0ae61 | CloudWatch console, sa-east-1 |
 
 adb on the EC2: always `sudo -u aea -H /opt/android-sdk/platform-tools/adb`.
 Deploy: rsync the repo + `sudo EMULATOR_COUNT=2 VAPID_SUBJECT=mailto:alertas@example.com ./aws-bootstrap.sh`

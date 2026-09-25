@@ -186,26 +186,40 @@ def public_sensors():
 
 
 def poll_health():
-    ok, reason = ensure_tunnel()
     record = {"at": now()}
-    if not ok:
-        record["error"] = reason
-    else:
+    # Twice at most: a tunnel to an IP the host no longer has (EIP, spot replacement) keeps the local
+    # port open for ~90 s, and that must not be written down as the gateway being down.
+    for attempt in range(2):
+        ok, reason = ensure_tunnel()
+        if not ok:
+            record = {"at": record["at"], "error": reason}
+            break
         try:
             status = call("GET", "/status")
-            record["sensors"] = {s["id"]: {k: s.get(k) for k in (
-                "covered", "covered_apns", "covered_webpush", "stale", "aea_ok", "aea_stale",
-                "last_canary_ok_at", "degraded")} for s in status["sensors"]}
-            record["relay_enabled"] = status["relay_enabled"]
-            # Changes on every gateway restart: how a deploy is told apart from a receiver down.
-            if status.get("started_at"):
-                record["started_at"] = datetime.fromisoformat(status["started_at"].replace("Z", "+00:00")).timestamp()
         except Exception as error:
-            # Tunnel up, gateway not answering: that is the gateway down, not us.
-            record["error"] = "gateway"
-            record["detail"] = str(error)[:200]
+            # Tunnel up, gateway not answering: the gateway down, unless a fresh tunnel says otherwise.
+            record = {"at": record["at"], "error": "gateway", "detail": str(error)[:200]}
+            drop_tunnel()
+            continue
+        record = {"at": record["at"], "relay_enabled": status["relay_enabled"],
+                  "sensors": {s["id"]: {k: s.get(k) for k in (
+                      "covered", "covered_apns", "covered_webpush", "stale", "aea_ok", "aea_stale",
+                      "last_canary_ok_at", "degraded")} for s in status["sensors"]}}
+        # Changes on every gateway restart: how a deploy is told apart from a receiver down.
+        if status.get("started_at"):
+            record["started_at"] = datetime.fromisoformat(status["started_at"].replace("Z", "+00:00")).timestamp()
+        break
     append("health.jsonl", record)
     return record
+
+
+def drop_tunnel():
+    """Only our own tunnel: one another monitor process opened is left alone."""
+    global tunnel
+    if tunnel and tunnel.poll() is None:
+        tunnel.kill()
+        tunnel.wait(timeout=10)
+    tunnel = None
 
 
 def poll_evidence(state):

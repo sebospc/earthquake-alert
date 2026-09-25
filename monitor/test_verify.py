@@ -420,3 +420,28 @@ for i in range(1, len(blip) + 1):
     notices, runs = verify.live_coverage_notices(blip[:i], ["quibdo"], runs)
     assert notices == [], f"a 9 min blip was told: {notices}"
 print("PASS live coverage notices: 15 min DEGRADED, 60 min FAIL, once each, then RESTORED")
+
+# poll_health: a dead tunnel (the host's IP changed) is rebuilt once before blaming the gateway.
+import monitor  # noqa: E402
+written, dropped = [], []
+monitor.append = lambda name, record: written.append(record)
+monitor.drop_tunnel = lambda: dropped.append(1)
+monitor.ensure_tunnel = lambda: (True, None)
+STATUS = {"relay_enabled": True, "started_at": "2026-09-24T23:33:00Z", "sensors": [{"id": "quibdo", "covered": True}]}
+answers = [OSError("connection reset"), STATUS]
+def scripted(method, path):
+    answer = answers.pop(0)
+    if isinstance(answer, Exception):
+        raise answer
+    return answer
+monitor.call = scripted
+record = monitor.poll_health()
+assert "error" not in record and record["sensors"]["quibdo"]["covered"] is True, record
+assert dropped == [1], "the stale tunnel was not dropped"
+answers[:] = [OSError("refused"), OSError("refused")]
+dropped.clear()
+assert monitor.poll_health()["error"] == "gateway", "a gateway really down must still read as down"
+monitor.ensure_tunnel = lambda: (False, "ssh")
+assert monitor.poll_health()["error"] == "ssh"
+assert len(written) == 3, "one health line per poll"
+print("PASS a dead tunnel is rebuilt once before the gateway is called down")
