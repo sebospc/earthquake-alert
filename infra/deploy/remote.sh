@@ -143,6 +143,8 @@ deploy_tools() {
 # One receptor. --key-switch is the one-time move from the Mac debug key to the CI key:
 # install -r would fail on the signature, so it is uninstall + install, and the grants,
 # relay.json and the notification listener access are redone here, not by hand.
+# A receptor without the app yet (new host) is a fresh install: nothing to back up, no
+# listener that could be mid-alert, and relay.json is written like after a key switch.
 deploy_apk() {
   local bundle=$1 sensor_id=$2 key_switch=${3:-}
   local serial sensor_secret readable_apk backup
@@ -154,14 +156,25 @@ deploy_apk() {
     || die "$serial ($sensor_id) is not booted"
   local uptime_before
   uptime_before=$(aea_adb -s "$serial" shell cut -d. -f1 /proc/uptime | tr -d '\r')
+  # `pm list packages` answers empty with exit 0 when the app is absent; an adb failure is
+  # an error, never mistaken for "not installed" (that would skip the alert check).
+  local packages fresh=""
+  packages=$(aea_adb -s "$serial" shell pm list packages "$PACKAGE") || die "$sensor_id: cannot list packages"
+  # Whole line: com.earthquakes.relay.<anything> must not count as installed.
+  [[ $'\n'${packages//$'\r'/}$'\n' == *$'\n'"package:$PACKAGE"$'\n'* ]] || fresh=1
 
   # The on-device evidence dies with an uninstall: keep a copy first, every time.
   install -d -o "$EMULATOR_USER" -m 0750 "$EVIDENCE_BACKUP_DIR"
   backup="$EVIDENCE_BACKUP_DIR/$sensor_id-$(date -u +%Y%m%dT%H%M%SZ).jsonl"
-  # No file yet (fresh receptor) is an empty backup. A failed read stops the deploy: it is
-  # also the read the alert check below needs, and unreadable must mean postpone.
-  aea_adb -s "$serial" exec-out run-as "$PACKAGE" sh -c "$EVIDENCE_READ" > "$backup" \
-    || die "DEPLOY_POSTPONED: could not read $sensor_id evidence, not touching the app"
+  if [[ -n $fresh ]]; then
+    : > "$backup"
+    echo "fresh install on $sensor_id: no app yet, nothing to back up"
+  else
+    # No file yet is an empty backup. A failed read stops the deploy: it is also the read
+    # the alert check below needs, and unreadable must mean postpone.
+    aea_adb -s "$serial" exec-out run-as "$PACKAGE" sh -c "$EVIDENCE_READ" > "$backup" \
+      || die "DEPLOY_POSTPONED: could not read $sensor_id evidence, not touching the app"
+  fi
   echo "evidence backup: $backup ($(wc -c < "$backup") bytes)"
   # The install kills the listener: one still retrying an alert the gateway has not seen
   # would lose it. Same rule as sensor-health's eew_posts(): an eew_* NOTIFICATION_POSTED
@@ -199,7 +212,7 @@ PY
   adb_output=$(aea_adb -s "$serial" shell dumpsys package "$PACKAGE" || true)
   contains "$adb_output" "android.permission.ACCESS_FINE_LOCATION: granted=true" \
     || die "$sensor_id: ACCESS_FINE_LOCATION not granted"
-  if [[ $key_switch == --key-switch ]]; then
+  if [[ $key_switch == --key-switch || -n $fresh ]]; then
     printf '{"gateway_url":"http://10.0.2.2:8787/events","hmac_secret":"%s","sensor_id":"%s"}' \
       "$sensor_secret" "$sensor_id" \
       | aea_adb -s "$serial" exec-in run-as "$PACKAGE" sh -c 'mkdir -p files && cat > files/relay.json'
@@ -219,7 +232,7 @@ PY
   ((uptime_after >= uptime_before)) || die "$sensor_id rebooted during the deploy"
   # Only what this deploy wrote: older GPS_KEEPER_FAILED lines are history, not this install.
   local skip_bytes=$(( $(wc -c < "$backup") + 1 ))
-  [[ $key_switch == --key-switch ]] && skip_bytes=1
+  [[ $key_switch == --key-switch || -n $fresh ]] && skip_bytes=1
   local evidence_after
   evidence_after=$(aea_adb -s "$serial" exec-out run-as "$PACKAGE" sh -c "$EVIDENCE_READ") \
     || die "$sensor_id: could not read the evidence after the install"

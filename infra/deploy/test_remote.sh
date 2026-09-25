@@ -116,6 +116,7 @@ shift 2  # -s <serial>
 long_tail() { head -c 2000000 /dev/zero | tr '\0' 'x'; echo; }
 case "$*" in
   "shell getprop sys.boot_completed") echo 1 ;;
+  "shell pm list packages com.earthquakes.relay") echo "package:com.earthquakes.relay.extra"; [[ -n $FAKE_NO_APP ]] || printf "package:com.earthquakes.relay\r\n" ;;
   "shell cut -d. -f1 /proc/uptime") echo 1000 ;;
   "exec-out run-as com.earthquakes.relay sh -c "*) cat "$FAKE_DEVICE_EVIDENCE" ;;
   uninstall*) echo Success; long_tail ;;
@@ -173,3 +174,12 @@ output=$(apk_run) && fail "apk deployed with unreadable listener evidence"
 grep -q "DEPLOY_POSTPONED: could not read quibdo evidence" <<<"$output" && [[ ! -s "$WORK/relay.json" ]] \
   || fail "unreadable evidence must postpone before touching the app: $output"
 echo "PASS unreadable listener evidence postpones"
+
+# New host: the app is not installed yet. No backup read, relay.json written, verified.
+printf '{"sensors":[{"id":"quibdo","covered":true,"last_canary_ok_at":"2999-01-01T00:00:00.000Z"}]}' > "$FAKE_STATUS"
+echo '{"type":"NEW"}' > "$WORK/device-evidence.jsonl"
+: > "$WORK/relay.json"
+output=$(FAKE_NO_APP=1 apk_run) || fail "fresh install failed: $output"
+grep -q "fresh install on quibdo" <<<"$output" && grep -q "^DEPLOY_OK apk quibdo" <<<"$output" || fail "no fresh DEPLOY_OK: $output"
+grep -q '"hmac_secret":"key2"' "$WORK/relay.json" || fail "fresh install must write relay.json"
+echo "PASS fresh install on a receptor with no app yet"
