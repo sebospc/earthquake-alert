@@ -1,18 +1,28 @@
 # QA review: current state
 
-Updated: 2026-09-24 18:30 UTC. Only what is current. Everything closed, with its detail, is in
+Updated: 2026-09-25. Only what is current. Everything closed, with its detail, is in
 `review-archive.md` (QA-NN → phase index at the top; search with `grep -n "QA-NN"`).
 
 ## Tests
 
-`npm test` (gateway) 55/55, 0 `todo`. `scripts/e2e-relay.sh`, `monitor/test_verify.py`,
-`monitor/test_push_receiver.mjs`, `scripts/test_sensor_health.py`, `scripts/test_lab.py` and
-JUnit, all green. Every new test was verified with mutations.
+`npm test` (gateway) 87/87, 0 `todo`. `swift test` (ios-client/RelayCore) 115/115.
+`scripts/test_bootstrap_listener.py` 5/5. `infra/deploy/test_remote.sh` 14/14.
+`infra/backup/test_backup_restore.sh` 4/4. `infra/new-account/test_rebuild.sh` 5/5.
+`scripts/e2e-relay.sh`, `monitor/test_verify.py`, `monitor/test_push_receiver.mjs`,
+`scripts/test_sensor_health.py`, `scripts/test_lab.py` and JUnit, all green (not re-run this
+pass; see the per-role handoff lines in STATUS.md for when they last were). Every new test was
+verified with mutations, live where noted below.
 
 ## Open
 
 | id | sev | what is missing |
 |---|---|---|
+| QA-105 | medium | `ReceptorChooser.choose()` itself backfills a down followed receptor correctly (`ios-client/RelayCore/Sources/RelayCore/ReceptorChooser.swift:89-91`). The bug is upstream: `AppModel.becameActive()` calls `sync()` before `watchCoverage()`'s stream has produced its first value, so after an outage (e.g. nightly reboot) `sync()` runs `choose()` against stale pre-backgrounding coverage and nothing re-triggers it until the next fix/foreground/token event — hours for a stationary phone. `ios-client/RelayCore/Sources/RelayCore/AppState.swift` (`AppModel.becameActive()` ~65-73, `watchCoverage` loop ~223-231). Fix: trigger `sync()` from inside the `watchCoverage` loop when a followed receptor's up/down flips, not only from `becameActive`/launch/fix/token. |
+| QA-107 | trivial | `gateway/test/relay-failures.test.js`, the `/devices/test` kill-switch test: the comment on the post-re-enable assertion reads backwards (says "the paused attempt used up the slot" on an assertion proving it did NOT). Fix the comment before commit. |
+| QA-110 | low, informational | `infra/new-account/test_rebuild.sh`'s round-trip test extracts `decrypt()` from `rebuild.sh` via `sed`; fragile if that function's signature changes (would fail loudly, not silently). Not blocking. |
+| QA-111 | low | `TokenLifecycle.register()` (`ios-client/RelayCore/Sources/RelayCore/GatewayClient.swift`, `TokenLifecycle.swift:60-63`) writes `stored.telemetry` unconditionally after the network call returns, no `stored.token == token` check. Actor is reentrant: an old `register()`'s slow response can land after a newer one and overwrite telemetry with stale data. Telemetry only gates opt-in arrival-upload cadence, not delivery. |
+| QA-112 | low | Same root cause as QA-111: narrow withdraw-then-immediately-re-consent race. If a fast re-registration rotates the token before a slow `unregister()` from the withdrawal lands, the live new token could be queued for delete. Needs no permission dialog + a fast fix to trigger. No epoch/generation guard on the actor. |
+| QA-113 | medium, test-coverage gap | `ReceptorChooserTests` has no case where `current` is slightly worse than `best` but still within `switchMargin` (0.03) — re-mutating `switchMargin` to 0.0 live still passes 13/13, so the margin itself is unverified either way. Add a case near `ReceptorChooserTests.swift:114`: small positive cost gap under the margin expects `.keep`, just above it expects `.subscribe`. Not a confirmed production bug, a real gap in what the suite proves. |
 | QA-67 | medium | CPU of the gateway and the emulators on the EC2 during an event. The coordinator measures it at the next quake (checklist, item 10) |
 | QA-84 | critical, in progress | Fixed in `sensor-health.py` (aea_ok=false with location > 20 h or null, plus a preventive reboot). The root fix, `GpsKeeperService`, is only on AWS quibdo since 18:04 UTC; still to confirm over hours the `earthquake_alerting` deliveries (item 12: the certifier measures them every 30 min, "GMS location on the AWS receptors" section; 18:35 UTC quibdo 38 s and 4 deliveries) before taking it to chaparral and the Mac |
 | QA-87 | high, before the canary hosts | `infra/cloudwatch`: the metrics have no host dimension. With 2+ hosts, `GatewayUp` (Minimum) stays 1 while one host's probe is dead, and `UncoveredReceptors` (Minimum) stays 0 while another host has receptors down. Fix: an `InstanceId` dimension and one alarm per host. `infra/cloudwatch/stack.yml:34`, `aea-cw-probe.py:59` |
@@ -39,6 +49,7 @@ JUnit, all green. Every new test was verified with mutations.
 
 | id | reason |
 |---|---|
+| QA-106 | suspected localization risk (a `title-loc-key`/`loc-key` sent with no matching entry in the app's strings, showing the raw key) is refuted: all 7 gateway key pairs exist in `ios-client/EarthquakeRelay/Localizable.xcstrings`, `docs/ios-contract.md`'s table matches key-for-key, and the NSE falls back to the Spanish payload text if a catalog entry is ever missing. Deliberate, checked in project.yml. |
 | QA-10 | single-thread `SENDER`: each emulator has its own Forwarder; optimization candidate |
 | QA-20 | a renamed `eew_*` channel is not forwarded: on purpose (comment in `isRelayable`) |
 | QA-32 | re-subscribing at the cap drops the old sensor: documented in `subscriptions.add` |
