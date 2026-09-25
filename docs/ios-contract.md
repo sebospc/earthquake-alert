@@ -25,6 +25,7 @@ full set of receptors for that token.
 |---|---|
 | `device_token` | hex, 64 to 200 characters (32 to 100 bytes). Stored in lowercase |
 | `sensor_ids` | 1 to 3, no duplicates, all with `"public": true` in `sensors.json` |
+| `demand_cell` | instead of `sensor_ids`, when no public receptor is within `partial_km`. See "Outside coverage" |
 | `platform` | exactly `"ios"` |
 | `apns_env` | `"production"` (default) or `"sandbox"`. Development builds use `"sandbox"` |
 
@@ -38,6 +39,9 @@ so a sandbox token is never sent to production or deleted because of `BadDeviceT
 | `400 {"error": "invalid apns_env"}` | neither `"production"` nor `"sandbox"` |
 | `400 {"error": "invalid device_token"}` | malformed token |
 | `400 {"error": "invalid sensor_ids"}` | empty, more than 3, duplicates, unknown or not public |
+| `201 {"sensor_ids": [], "demand_cell": "37,-755", "apns_env": "..."}` | registered outside coverage |
+| `400 {"error": "invalid demand_cell"}` | not `"<int>,<int>"`, or out of range |
+| `400 {"error": "send sensor_ids or demand_cell, not both"}` | both fields present |
 | `400 {"error": "device limit reached"}` | the server already has 10,000 tokens and this one is new |
 | `400 {"error": "..."}` | invalid JSON |
 | `413` | body over 16 KB (closes the connection) |
@@ -51,6 +55,21 @@ the server immediately sends it the "Sin cobertura" push for that receptor. It i
 new receptor: registering the same set again does not repeat it. That way, when
 "Cobertura restablecida" arrives later, the phone already knew it was down.
 
+### Outside coverage
+
+```json
+{ "device_token": "a1b2...", "demand_cell": "37,-755", "platform": "ios", "apns_env": "production" }
+```
+
+The phone computes the cell itself: `floor(lat*10),floor(lon*10)`, a cell of about 11 km.
+Its location never leaves the phone; the cell is all the server gets. It is the demand
+signal for placing new receptors (`docs/siting-pilot.md`, "Demand-driven growth"). One cell
+per token: registering again replaces it, and registering with `sensor_ids` clears it.
+
+The first time a token registers this way, the server sends the "no coverage yet" push
+below. The demand only counts once APNs has accepted a push to that token, so an invented
+token never counts. The app shows "Tu zona todavía no tiene cobertura." as before.
+
 ## DELETE /devices
 
 ```json
@@ -59,7 +78,8 @@ new receptor: registering the same set again does not repeat it. That way, when
 
 `204` whether the token exists or not, so the app can retry safely. `400` if the token
 is malformed. It counts against the same limit of 120 per IP as `POST /devices`. The app
-calls it when the user turns alerts off or when it leaves all coverage.
+calls it when the user turns alerts off. Leaving all coverage is a `POST /devices` with
+`demand_cell`, not a DELETE.
 
 ### No authentication, on purpose for now
 
@@ -158,6 +178,28 @@ It goes out when the receptor stops reporting for 15 min, when AEA stops being
 confirmed, when all APNs deliveries of an alert fail because of us, or
 when the operator turns on the kill switch.
 
+### No coverage yet
+
+Once per token, on the first `POST /devices` with `demand_cell`:
+
+```json
+{
+  "aps": {
+    "alert": { "title": "Sin cobertura en tu zona", "body": "Tu zona todavía no tiene cobertura." },
+    "sound": "default",
+    "interruption-level": "active"
+  },
+  "kind": "coverage",
+  "sensor_id": null,
+  "covered": false,
+  "reason": "no_receptor"
+}
+```
+
+`sensor_id: null` means no receptor is involved: the app must not look it up. No
+"restored" push follows this one; when a receptor appears near the cell, the app finds it
+in `sensors.json` on its next location change.
+
 ## Dedup per quake
 
 - A token that follows 2 receptors that see the same quake gets **one** notice. The server
@@ -235,8 +277,8 @@ The reference is `gateway/public/coverage.js`: haversine, Earth radius 6371 km.
    each public receptor.
 3. It keeps the 2-3 closest within `partial_km`.
 4. If the set changed, it calls `POST /devices` with those `sensor_ids`. If none is
-   left, it calls `DELETE /devices` and shows "sin cobertura".
-5. The location stays on the phone.
+   left, it calls `POST /devices` with its `demand_cell` and shows "sin cobertura".
+5. The location stays on the phone; only the cell leaves it, and only outside coverage.
 
 ## Missing in the backend
 

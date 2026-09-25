@@ -313,15 +313,31 @@ function validateDeviceToken(token) {
  * Only public sensors: a control or unlisted one would look like coverage and is not.
  */
 export function validateDevice(request, publicSensorIds) {
-  const { device_token: token, sensor_ids: ids, platform, apns_env: apnsEnv = "production" } = request;
+  const { device_token: token, sensor_ids: ids, demand_cell: demandCell, platform,
+    apns_env: apnsEnv = "production" } = request;
   if (platform !== "ios") throw new Error("invalid platform");
   // A development build's token only works against the sandbox, and the other way round.
   if (!Object.hasOwn(APNS_HOSTS, apnsEnv)) throw new Error("invalid apns_env");
+  // Outside coverage the phone sends only its 0.1° cell, never coordinates or sensors.
+  if (demandCell !== undefined) {
+    if (ids !== undefined) throw new Error("send sensor_ids or demand_cell, not both");
+    return { token: validateDeviceToken(token), sensorIds: [], demandCell: validateDemandCell(demandCell), apnsEnv };
+  }
   if (!Array.isArray(ids) || ids.length < 1 || ids.length > MAX_SENSORS_PER_DEVICE
       || new Set(ids).size !== ids.length || !ids.every(id => publicSensorIds.has(id))) {
     throw new Error("invalid sensor_ids");
   }
-  return { token: validateDeviceToken(token), sensorIds: ids, apnsEnv };
+  return { token: validateDeviceToken(token), sensorIds: ids, demandCell: null, apnsEnv };
+}
+
+/** "floor(lat*10),floor(lon*10)", e.g. "37,-755": a cell of about 11 km. */
+export function validateDemandCell(cell) {
+  const match = typeof cell === "string" ? /^(-?\d{1,3}),(-?\d{1,4})$/.exec(cell) : null;
+  const [lat10, lon10] = match ? [Number(match[1]), Number(match[2])] : [NaN, NaN];
+  if (!(lat10 >= -900 && lat10 < 900 && lon10 >= -1800 && lon10 < 1800)) {
+    throw new Error("invalid demand_cell");
+  }
+  return `${lat10},${lon10}`;
 }
 
 /** Returns { sensorId, aeaOk }; aeaOk is undefined for the listener's own beat. */
@@ -403,16 +419,26 @@ function createDeviceStore(file) {
     tokensFor: sensorId => Object.keys(byToken)
       .filter(token => byToken[token].sensor_ids.includes(sensorId)),
     sensorsOf: token => byToken[token]?.sensor_ids ?? [],
+    has: token => Object.hasOwn(byToken, token),
     apnsEnvOf: token => byToken[token]?.apns_env ?? "production",
-    // Replaces the whole set: the app calls this every time the phone moves.
-    put(token, sensorIds, apnsEnv) {
+    /** When APNs first accepted a push to this token; demand only counts after it. */
+    verifiedAt: token => byToken[token]?.verified_at ?? null,
+    // Replaces the whole set: the app calls this every time the phone moves. One demand
+    // cell per token at most, so one phone can only ever weigh one.
+    put(token, sensorIds, apnsEnv, demandCell = null) {
       if (!byToken[token] && Object.keys(byToken).length >= MAX_DEVICES) {
         throw new Error("device limit reached");
       }
       // What this phone was last told about each sensor survives re-registering it.
       const told = Object.fromEntries(Object.entries(byToken[token]?.coverage_told ?? {})
         .filter(([sensorId]) => sensorIds.includes(sensorId)));
-      byToken[token] = { platform: "ios", sensor_ids: sensorIds, apns_env: apnsEnv, coverage_told: told };
+      byToken[token] = { platform: "ios", sensor_ids: sensorIds, apns_env: apnsEnv, coverage_told: told,
+        demand_cell: demandCell, verified_at: byToken[token]?.verified_at ?? null };
+      return store.persist();
+    },
+    setVerified(token, at) {
+      if (!byToken[token] || byToken[token].verified_at) return Promise.resolve();
+      byToken[token].verified_at = at;
       return store.persist();
     },
     /** The last coverage state this phone was told for this sensor; undefined if never. */
@@ -970,16 +996,36 @@ export function createServer(config) {
   async function handleDevice(request, response, raw) {
     if (!allowRegistration(request, response, "devices")) return;
     const device = validateDevice(JSON.parse(raw.toString("utf8")), publicSensorIds);
-    await devices.put(device.token, device.sensorIds, device.apnsEnv);
-    sendJson(response, 201, { sensor_ids: device.sensorIds, apns_env: device.apnsEnv });
-    tellNewDeviceAboutLostCoverage(device.token, device.sensorIds);
+    await devices.put(device.token, device.sensorIds, device.apnsEnv, device.demandCell);
+    sendJson(response, 201, device.demandCell
+      ? { sensor_ids: [], demand_cell: device.demandCell, apns_env: device.apnsEnv }
+      : { sensor_ids: device.sensorIds, apns_env: device.apnsEnv });
+    if (device.demandCell) tellNoCoverageYet(device.token);
+    else tellNewDeviceAboutLostCoverage(device.token, device.sensorIds);
+  }
+
+  /**
+   * Once per token: "no coverage yet". Its APNs 200 is also what makes the demand count, so
+   * an invented token (APNs rejects it) never weighs in placing a receptor.
+   */
+  function tellNoCoverageYet(token) {
+    if (devices.verifiedAt(token)) return;
+    const message = { title: "Sin cobertura en tu zona", body: "Tu zona todavía no tiene cobertura." };
+    const payload = JSON.stringify({
+      aps: { alert: message, sound: "default", "interruption-level": "active" },
+      kind: "coverage", sensor_id: null, covered: false, reason: "no_receptor"
+    });
+    apnsToTokens([token], payload, "coverage:none", Date.now() + COVERAGE_PUSH_TTL_MS)
+      .then(([result]) => isDelivered(result.status)
+        ? devices.setVerified(token, new Date().toISOString()) : undefined)
+      .catch(error => console.error(`no-coverage notice failed: ${error.message}`));
   }
 
   // Idempotent: 204 whether or not the token was registered, so the app can simply retry.
   async function handleDeviceRemoval(request, response, raw) {
     if (!allowRegistration(request, response, "devices")) return;
     const token = validateDeviceToken(JSON.parse(raw.toString("utf8")).device_token);
-    if (devices.sensorsOf(token).length > 0) await devices.remove(token);
+    if (devices.has(token)) await devices.remove(token);
     response.writeHead(204).end();
   }
 

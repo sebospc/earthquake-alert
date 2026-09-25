@@ -80,8 +80,13 @@ jobs:
           cp android-listener/build/outputs/apk/debug/android-listener-debug.apk dist/listener.apk
           # Wrong key = signature mismatch on install -r at deploy time. Fail here instead.
           apksigner="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner"
-          signer="$("$apksigner" verify --print-certs dist/listener.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
-          test "$signer" = "${{ vars.LISTENER_CERT_SHA256 }}" || { echo "::error::APK signer $signer is not the receptor key"; exit 1; }
+          # The full output goes to the log: an empty or reworded answer must be visible.
+          # Newer apksigner may label signers "Signer (minSdkVersion=...)" instead of "Signer #1".
+          signer_output="$("$apksigner" verify --print-certs dist/listener.apk 2>&1)" || { echo "$signer_output"; echo "::error::apksigner verify failed"; exit 1; }
+          echo "$signer_output"
+          digests="$(sed -nE 's/^Signer.* certificate SHA-256 digest: ([0-9a-f]{64})$/\1/p' <<<"$signer_output" | sort -u)"
+          # Every signer block must be the receptor key, and there must be at least one.
+          test "$digests" = "${{ vars.LISTENER_CERT_SHA256 }}" || { echo "::error::APK signer(s) [${digests//$'\n'/ }] not exactly the receptor key"; exit 1; }
           (cd dist && sha256sum listener.apk > listener.apk.sha256)
       - uses: actions/upload-artifact@v4
         if: steps.key.outputs.signed == 'true'

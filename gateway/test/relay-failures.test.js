@@ -659,3 +659,61 @@ test("the gateway writes the alert text, whatever the receiver sent", async t =>
   assert.deepEqual(byToken[OTHER_PHONE], { title: "Alerta de sismo", body: "Posible sismo cerca de tu zona. Protéjase ahora." });
   assert.equal(apns.pushes.some(push => /km/.test(JSON.stringify(push.payload.aps))), false, "a distance reached a phone");
 });
+
+test("demand: a phone outside coverage leaves only its 0.1° cell, counted after one APNs 200", async t => {
+  const apns = await startApns(t);
+  const { port, config } = await startGateway(t, { apnsHost: apns.url });
+  const stored = async () => JSON.parse(await readFile(config.devicesFile, "utf8"));
+  const withCell = (token, cell) => request(port, "POST", "/devices",
+    JSON.stringify({ device_token: token, demand_cell: cell, platform: "ios" }));
+
+  const answer = await withCell(PHONE, "37,-755");
+  assert.equal(answer.status, 201);
+  assert.deepEqual(JSON.parse(answer.body), { sensor_ids: [], demand_cell: "37,-755", apns_env: "production" });
+  await wait(200);
+  const told = apns.all.filter(push => push.token === PHONE);
+  assert.equal(told.length, 1);
+  assert.deepEqual(told[0].payload, {
+    aps: { alert: { title: "Sin cobertura en tu zona", body: "Tu zona todavía no tiene cobertura." },
+      sound: "default", "interruption-level": "active" },
+    kind: "coverage", sensor_id: null, covered: false, reason: "no_receptor"
+  });
+  let device = (await stored())[PHONE];
+  assert.equal(device.demand_cell, "37,-755");
+  assert.ok(Date.parse(device.verified_at), "an accepted push did not verify the token");
+  assert.equal(JSON.stringify(device).includes("3.7"), false, "more than the cell was stored");
+
+  // The app registers again on every move: no second notice, and one cell per phone.
+  await withCell(PHONE, "38,-755");
+  await wait(200);
+  assert.equal(apns.all.filter(push => push.token === PHONE).length, 1);
+  assert.equal((await stored())[PHONE].demand_cell, "38,-755");
+
+  // Into coverage: the cell goes away, the verification stays.
+  await register(port, PHONE, ["chaparral"]);
+  device = (await stored())[PHONE];
+  assert.equal(device.demand_cell, null);
+  assert.ok(device.verified_at);
+
+  for (const cell of ["37.5,-755", "900,0", "0,1800", "a,b", 37, ""]) {
+    assert.equal((await withCell(OTHER_PHONE, cell)).status, 400, String(cell));
+  }
+  const both = await request(port, "POST", "/devices", JSON.stringify(
+    { device_token: OTHER_PHONE, sensor_ids: ["chaparral"], demand_cell: "37,-755", platform: "ios" }));
+  assert.equal(both.status, 400);
+
+  // A demand-only phone can leave too.
+  await withCell(OTHER_PHONE, "-1,-800");
+  assert.equal((await request(port, "DELETE", "/devices", JSON.stringify({ device_token: OTHER_PHONE }))).status, 204);
+  assert.equal(OTHER_PHONE in (await stored()), false, "DELETE kept a demand-only phone");
+});
+
+test("demand: a token APNs never accepts is stored but never verified", async t => {
+  const { port, config } = await startGateway(t, { apnsHost: "http://127.0.0.1:1" });
+  await request(port, "POST", "/devices",
+    JSON.stringify({ device_token: PHONE, demand_cell: "37,-755", platform: "ios" }));
+  await wait(300);
+  const device = JSON.parse(await readFile(config.devicesFile, "utf8"))[PHONE];
+  assert.equal(device.demand_cell, "37,-755");
+  assert.equal(device.verified_at, null);
+});
