@@ -45,7 +45,8 @@ final class AccessibilityUITests: XCTestCase {
     private func auditCoverageSheet(textSize: String?) throws {
         let app = launch(state: "covered-full", textSize: textSize)
         app.buttons["state"].tap()
-        XCTAssertTrue(app.buttons["testAlert"].waitForExistence(timeout: 5))
+        // Not a row: at the largest size, doubled, the rows start below the fold.
+        XCTAssertTrue(app.navigationBars.firstMatch.waitForExistence(timeout: 5))
         sleep(1) // let the sheet finish sliding up, or half-visible rows read as clipped
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.lifetime = .keepAlways
@@ -57,8 +58,19 @@ final class AccessibilityUITests: XCTestCase {
     }
 
     private func audit(state: String, textSize: String?) throws {
-        try audit(launch(state: state, textSize: textSize), named: "\(state) \(textSize ?? "default")")
+        let app = launch(state: state, textSize: textSize)
+        let name = "\(state) \(textSize ?? "default")"
+        guard Self.isPseudolanguage else { return try audit(app, named: name) }
+        // Doubled text wraps and hyphenates ("interrumpi-do"), and the audit's clipping heuristic
+        // reads that as clipped. Truncation is judged from these screenshots instead.
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = name
+        shot.lifetime = .keepAlways
+        add(shot)
+        try audit(app, named: name, ignoring: .textClipped)
     }
+
+    private static var isPseudolanguage: Bool { ProcessInfo.processInfo.environment["UI_TEST_LANGUAGE"] == "double" }
 
     /// Every issue fails the test; the name and element say where it is.
     private func audit(_ app: XCUIApplication, named name: String, ignoring: XCUIAccessibilityAuditType = []) throws {

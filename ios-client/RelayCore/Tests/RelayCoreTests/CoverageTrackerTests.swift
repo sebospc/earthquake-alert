@@ -37,4 +37,12 @@ final class CoverageTrackerTests: XCTestCase {
                             receptorCoverage: tracker.coverage(at: start + 10), alert: nil, now: start + 10),
             .error(.receptorsDown))
     }
+
+    func testResyncWhenAReceptorFlipsOrTheFirstAnswerArrivesNeverOnSilence() {
+        XCTAssertTrue(CoverageTracker.needsResync(previous: nil, latest: ["chaparral": true]), "first answer after a wake")
+        XCTAssertTrue(CoverageTracker.needsResync(previous: ["chaparral": true], latest: ["chaparral": false]))
+        XCTAssertTrue(CoverageTracker.needsResync(previous: ["chaparral": false], latest: ["chaparral": false, "quibdo": true]))
+        XCTAssertFalse(CoverageTracker.needsResync(previous: ["chaparral": true], latest: ["chaparral": true]))
+        XCTAssertFalse(CoverageTracker.needsResync(previous: ["chaparral": true], latest: nil), "no answer is not news")
+    }
 }

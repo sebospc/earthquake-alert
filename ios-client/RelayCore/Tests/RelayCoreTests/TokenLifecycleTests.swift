@@ -81,6 +81,71 @@ final class TokenLifecycleTests: XCTestCase {
         XCTAssertTrue(enabled, "the next 201 turns it back on")
     }
 
+    // MARK: reentrancy (QA-111, QA-112)
+
+    func testAcceptingAgainWhileTheWithdrawDeleteIsInFlightPostsOnlyAfterIt() async throws {
+        let lifecycle = lifecycle()
+        _ = try await lifecycle.register(token: oldToken, to: .receptors(["chaparral"]))
+        await server.holdDeletes()
+        let withdraw = Task { await lifecycle.unregister() }
+        await eventually { await self.server.heldDeleteCount == 1 }
+
+        let accept = Task { [token = oldToken] in try await lifecycle.register(token: token, to: .receptors(["chaparral"])) }
+        // Gives an early POST every chance to go out; with the DELETE unanswered it must not.
+        await eventually { await self.server.calls.count > 2 }
+        var calls = await server.calls
+        XCTAssertEqual(calls.last, .delete(oldToken), "the POST went out before the DELETE was answered")
+
+        await server.releaseDeletes()
+        _ = await withdraw.value
+        _ = try await accept.value
+        calls = await server.calls
+        XCTAssertEqual(Array(calls.suffix(2)), [.delete(oldToken), .post(oldToken, .receptors(["chaparral"]))])
+        let pending = await lifecycle.hasPendingDeletes
+        XCTAssertFalse(pending, "the live token must not be deleted again")
+    }
+
+    func testAnOlderRegisterAnsweringLastDoesNotOverwriteTelemetry() async throws {
+        let lifecycle = lifecycle()
+        await server.holdPosts()
+        await server.optInToTelemetry(true)
+        let older = Task { [token = oldToken] in try await lifecycle.register(token: token, to: .receptors(["chaparral"])) }
+        await eventually { await self.server.heldPostCount == 1 }
+        await server.optInToTelemetry(false)
+        let newer = Task { [token = oldToken] in try await lifecycle.register(token: token, to: .receptors(["chaparral"])) }
+        await eventually { await self.server.heldPostCount == 2 }
+
+        await server.releasePost(1)
+        _ = try await newer.value
+        await server.releasePost(0)
+        do {
+            _ = try await older.value
+            XCTFail("the older answer must not count")
+        } catch {
+            XCTAssertEqual(error as? GatewayClient.Failure, .rejected("superseded by a newer registration"))
+        }
+        let enabled = await lifecycle.telemetryEnabled
+        XCTAssertFalse(enabled, "the newer 201 said off")
+    }
+
+    func testARegisterThatLandsAfterWithdrawalIsDeletedAgain() async throws {
+        let lifecycle = lifecycle()
+        await server.holdPosts()
+        let register = Task { [token = oldToken] in try await lifecycle.register(token: token, to: .receptors(["chaparral"])) }
+        await eventually { await self.server.heldPostCount == 1 }
+        await lifecycle.unregister()
+
+        await server.releasePost(0)
+        do {
+            _ = try await register.value
+            XCTFail("a registration after withdrawal must not count")
+        } catch {
+            XCTAssertEqual(error as? GatewayClient.Failure, .rejected("unregistered meanwhile"))
+        }
+        let calls = await server.calls
+        XCTAssertEqual(calls.last, .delete(oldToken), "the POST may have landed after the first DELETE")
+    }
+
     func testAnOlderConsentVersionIsNotEnough() {
         let defaults = UserDefaults(suiteName: suite)!
         defaults.set(Consent.current - 1, forKey: "consent-version")
@@ -187,19 +252,48 @@ actor FakeRegistrar: DeviceRegistrar {
     private var deletesFail = false
     private var postRejection: String?
     private var telemetry = false
+    /// While set, each request waits after being recorded (sent) until released: the answer is in flight.
+    private var holdingPosts = false
+    private var holdingDeletes = false
+    private var heldPosts: [CheckedContinuation<Void, Never>?] = []
+    private var heldDeletes: [CheckedContinuation<Void, Never>] = []
 
     func failDeletes(_ fail: Bool) { deletesFail = fail }
     func optInToTelemetry(_ on: Bool) { telemetry = on }
     func rejectPosts(_ message: String) { postRejection = message }
+    func holdPosts() { holdingPosts = true }
+    func holdDeletes() { holdingDeletes = true }
+    var heldPostCount: Int { heldPosts.count }
+    var heldDeleteCount: Int { heldDeletes.count }
+
+    /// Answers the `index`-th held POST (in the order they were sent).
+    func releasePost(_ index: Int) {
+        heldPosts[index]?.resume()
+        heldPosts[index] = nil
+    }
+
+    func releaseDeletes() {
+        holdingDeletes = false
+        heldDeletes.forEach { $0.resume() }
+        heldDeletes = []
+    }
 
     func subscribe(deviceToken: Data, to subscription: GatewayClient.Subscription) async throws(GatewayClient.Failure) -> GatewayClient.Registered {
         calls.append(.post(deviceToken, subscription))
+        let telemetryWhenSent = telemetry
+        if holdingPosts { await withCheckedContinuation { heldPosts.append($0) } }
         if let postRejection { throw .rejected(postRejection) }
-        return .init(sensorIDs: subscription.sensorIDs, demandCell: subscription.demandCell, telemetry: telemetry)
+        return .init(sensorIDs: subscription.sensorIDs, demandCell: subscription.demandCell, telemetry: telemetryWhenSent)
     }
 
     func unsubscribe(deviceToken: Data) async throws(GatewayClient.Failure) {
         calls.append(.delete(deviceToken))
+        if holdingDeletes { await withCheckedContinuation { heldDeletes.append($0) } }
         if deletesFail { throw .retryLater }
     }
+}
+
+/// Waits until `condition` holds, for held requests to be sent.
+func eventually(_ condition: () async -> Bool) async {
+    for _ in 0..<1000 where !(await condition()) { await Task.yield() }
 }

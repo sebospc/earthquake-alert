@@ -20,4 +20,11 @@ public struct CoverageTracker: Sendable {
         guard let lastAnswerAt, now.timeIntervalSince(lastAnswerAt) < Self.grace else { return nil }
         return lastAnswer
     }
+
+    /// QA-105: choose receptors again when a receptor went up or down, including the first answer
+    /// after a wake (the coverage sync() read on becameActive is from before the phone slept).
+    /// A missing answer is not news: `nil` never triggers it.
+    public static func needsResync(previous: [String: Bool]?, latest: [String: Bool]?) -> Bool {
+        latest != nil && latest != previous
+    }
 }

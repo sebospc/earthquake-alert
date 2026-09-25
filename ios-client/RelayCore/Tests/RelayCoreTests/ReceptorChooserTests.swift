@@ -98,6 +98,28 @@ final class ReceptorChooserTests: XCTestCase {
         XCTAssertEqual(chooser.strongOnlyIDs(["near"], fix: fix(), current: [], sensors: [sensor("near", km: 20, bearing: 0)]), [])
     }
 
+    /// QA-113: the followed receptor is a bit worse than the best set, but by less than the switch
+    /// margin: keep it. By more than the margin: switch.
+    func testSlightlyWorseCurrentIsKeptWithinTheSwitchMargin() throws {
+        // Both to the north, 20° apart: the best set is the pair, the current one alone is a bit worse.
+        let best = sensor("best", km: 30, bearing: 20)
+        func gap(currentKm: Double) -> (current: Sensor, gap: Double, bestIDs: [String]) {
+            let current = sensor("current", km: currentKm, bearing: 0)
+            guard case .subscribe(let ids) = chooser.choose(fix: fix(), now: now, current: [], sensors: [best, current], covered: nil)
+            else { return (current, -1, []) }
+            let bestSet = [best, current].filter { ids.contains($0.id) }
+            return (current, chooser.cost(of: [current], from: fix()) - chooser.cost(of: bestSet, from: fix()), ids)
+        }
+        let candidates = stride(from: 30.5, through: 120, by: 0.5).map(gap)
+        let within = try XCTUnwrap(candidates.first { $0.gap > 0 && $0.gap < chooser.switchMargin && $0.bestIDs != ["current"] },
+                                   "fixture: no distance puts the current set inside the margin")
+        let beyond = try XCTUnwrap(candidates.first { $0.gap > chooser.switchMargin && $0.bestIDs != ["current"] })
+
+        XCTAssertEqual(chooser.choose(fix: fix(), now: now, current: ["current"], sensors: [best, within.current], covered: nil), .keep)
+        XCTAssertEqual(chooser.choose(fix: fix(), now: now, current: ["current"], sensors: [best, beyond.current], covered: nil),
+                       .subscribe(beyond.bestIDs))
+    }
+
     func testFarReceptorHasItsOwnStayBand() {
         // Between the enter (40%) and stay (45%) M5.5 miss share: kept if followed, not taken if new.
         let edge = sensor("edge", km: 132, bearing: 0)

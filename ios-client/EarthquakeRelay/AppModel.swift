@@ -224,8 +224,10 @@ final class AppModel {
         guard statusTask == nil else { return }
         statusTask = Task {
             for await latest in gateway.watchCoverage() {
+                let resync = CoverageTracker.needsResync(previous: coverage, latest: latest)
                 coverage = latest
                 await refreshTier()
+                if resync { sync() }
             }
         }
     }

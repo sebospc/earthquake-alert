@@ -33,6 +33,11 @@ public actor TokenLifecycle {
     private let defaults: UserDefaults
     private let deviceID: String
     private var stored: Stored
+    /// Bumped by every register and unregister. The actor is reentrant across each network call,
+    /// so a response only counts if nothing newer started meanwhile.
+    private var generation = 0
+    /// The DELETE run in progress. Runs are chained, so a POST never overtakes a DELETE of the same token.
+    private var deleting: Task<Void, Never>?
 
     public init(registrar: any DeviceRegistrar, defaults: UserDefaults = .standard, deviceID: String) {
         self.registrar = registrar
@@ -54,10 +59,21 @@ public actor TokenLifecycle {
         stored.deviceID = deviceID
         stored.pendingDeletes.removeAll { $0 == token }
         save()
+        generation += 1
+        let myGeneration = generation
 
+        // Also waits for a DELETE of this same token still in flight (withdraw, then accept again).
         await retryPendingDeletes()
 
         let registered = try await registrar.subscribe(deviceToken: token, to: subscription)
+        if stored.token == nil {
+            // Consent was withdrawn while this POST was in flight: it may have landed after the DELETE.
+            stored.pendingDeletes.append(token)
+            save()
+            await retryPendingDeletes()
+            throw .rejected("unregistered meanwhile")
+        }
+        guard generation == myGeneration else { throw .rejected("superseded by a newer registration") }
         stored.telemetry = registered.telemetry
         save()
         return registered.sensorIDs.isEmpty ? .outsideCoverage : .receptors(registered.sensorIDs)
@@ -73,6 +89,7 @@ public actor TokenLifecycle {
         stored.token = nil
         stored.telemetry = nil
         save()
+        generation += 1
         await retryPendingDeletes()
         return stored.pendingDeletes.isEmpty
     }
@@ -88,16 +105,25 @@ public actor TokenLifecycle {
 
     /// Never throws: a stuck old token must not block registering the current one.
     public func retryPendingDeletes() async {
-        var stillPending: [Data] = []
+        let previous = deleting
+        let run = Task {
+            await previous?.value
+            await deletePending()
+        }
+        deleting = run
+        await run.value
+    }
+
+    private func deletePending() async {
         for oldToken in Set(stored.pendingDeletes) {
-            do {
-                try await registrar.unsubscribe(deviceToken: oldToken)
-            } catch {
-                stillPending.append(oldToken)
+            // Registered again while an earlier DELETE ran: this token is live now.
+            guard stored.pendingDeletes.contains(oldToken) else { continue }
+            if (try? await registrar.unsubscribe(deviceToken: oldToken)) != nil {
+                // Only the one that succeeded: tokens added during the await stay pending.
+                stored.pendingDeletes.removeAll { $0 == oldToken }
+                save()
             }
         }
-        stored.pendingDeletes = stillPending
-        save()
     }
 
     public var hasPendingDeletes: Bool { !stored.pendingDeletes.isEmpty }
