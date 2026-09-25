@@ -55,6 +55,8 @@ and, if the APK changed, `./aws-bootstrap.sh listener ~/listener.apk chaparral q
 
 ## Open
 
+- **Canaries (user, 25-sep):** $0 plan approved: general-santos + glan (pair) as emulators 3-4 on the main host, after a green CI APK and a CPU check. Dedicated canary hosts (La Serena, San Salvador too, ~$66/month) later, when there is money.
+
 - **24-sep 23:10–23:25 (EC2 clock):** sensor-health with QA-90 steps 1+2 deployed (checksum ok), then the aea_ok fix at 23:25. quibdo was falsely uncovered 21:15→23:25 (aea_ok's deliveries>0 reads the event log GpsKeeper rolls over); rebooted by the coordinator at 23:23; covered again 23:25. Open: the nudge falsely confirmed a leg across that reboot (developer fixing).
 
 - **QA-90 (critical, 24-sep 19:40):** earthquake_alerting only gets a location on a ≥1 km move. GpsKeeper keeps the GPS provider fresh, but AEA's copy ages (quibdo: last delivery 18:11 UTC), and sensor-health's 20 h reboot reads the GPS provider, so it never fires on quibdo. In progress: AEA location age drives aea_ok and the reboot (deadline 25-sep 17:00 UTC), plus a 1.1 km nudge-and-return. Fallback: manual reboot of quibdo before 25-sep 18:00 UTC. "Deliveries flat" is NOT a fault signal.

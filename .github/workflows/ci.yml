@@ -59,8 +59,9 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
-      # The debug build signs with ~/.android/debug.keystore. The receptors trust only the
-      # key in this secret; a build signed with a runner-generated key would fail install -r.
+      # The receptors trust only the key in this secret; a build signed with another key fails
+      # install -r. Signed explicitly (Gradle's injected signing): on the runner AGP did not
+      # use ~/.android/debug.keystore and made its own key (CI run 2).
       # PRs from forks get no secrets: they still test, but upload no APK.
       - name: signing key
         id: key
@@ -68,11 +69,13 @@ jobs:
           KEYSTORE_B64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_B64 }}
         run: |
           if [ -n "$KEYSTORE_B64" ]; then
-            mkdir -p ~/.android
-            printf '%s' "$KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore
-            echo "signed=true" >> "$GITHUB_OUTPUT"
+            printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/receptor.keystore"
+            {
+              echo "signed=true"
+              echo "gradle_signing=-Pandroid.injected.signing.store.file=$RUNNER_TEMP/receptor.keystore -Pandroid.injected.signing.store.password=android -Pandroid.injected.signing.key.alias=androiddebugkey -Pandroid.injected.signing.key.password=android"
+            } >> "$GITHUB_OUTPUT"
           fi
-      - run: ./gradlew --no-daemon :android-listener:testDebugUnitTest :android-listener:assembleDebug
+      - run: ./gradlew --no-daemon :android-listener:testDebugUnitTest :android-listener:assembleDebug ${{ steps.key.outputs.gradle_signing }}
       - name: apk and checksum
         if: steps.key.outputs.signed == 'true'
         run: |
@@ -81,10 +84,11 @@ jobs:
           # Wrong key = signature mismatch on install -r at deploy time. Fail here instead.
           apksigner="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner"
           # The full output goes to the log: an empty or reworded answer must be visible.
-          # Newer apksigner may label signers "Signer (minSdkVersion=...)" instead of "Signer #1".
+          # Labels seen: "Signer #1 certificate SHA-256 digest:" (build-tools 35) and
+          # "V2 Signer: certificate SHA-256 digest:" (runner, CI run 2).
           signer_output="$("$apksigner" verify --print-certs dist/listener.apk 2>&1)" || { echo "$signer_output"; echo "::error::apksigner verify failed"; exit 1; }
           echo "$signer_output"
-          digests="$(sed -nE 's/^Signer.* certificate SHA-256 digest: ([0-9a-f]{64})$/\1/p' <<<"$signer_output" | sort -u)"
+          digests="$(sed -nE 's/^(V[0-9.]+ )?Signer[^:]*:? ?certificate SHA-256 digest: ([0-9a-f]{64})$/\2/p' <<<"$signer_output" | sort -u)"
           # Every signer block must be the receptor key, and there must be at least one.
           test "$digests" = "${{ vars.LISTENER_CERT_SHA256 }}" || { echo "::error::APK signer(s) [${digests//$'\n'/ }] not exactly the receptor key"; exit 1; }
           (cd dist && sha256sum listener.apk > listener.apk.sha256)
