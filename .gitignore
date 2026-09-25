@@ -5,6 +5,7 @@ local.properties
 evidence/
 gateway/.env
 gateway/gateway-evidence.jsonl
+gateway/telemetry.jsonl
 ios-client/*.xcodeproj/
 xcuserdata/
 DerivedData/

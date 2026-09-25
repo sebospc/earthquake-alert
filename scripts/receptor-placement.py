@@ -18,6 +18,7 @@ import json
 import math
 import os
 import sys
+from collections import Counter
 from datetime import datetime, timezone
 
 GROUP_RADIUS_KM = 31
@@ -29,6 +30,10 @@ MIN_CELL_PHONES = 3
 HAZARD_FLOOR_PER_YEAR = 0.1
 # 30 phones at the floor, or ~9 at one alert a year.
 MIN_SCORE = 3.0
+# Colombia with San Andrés, as (lat, lon) min and max. App reviewers and testers abroad register
+# cells too; they must not pull a receptor to Cupertino.
+# ponytail: a box, not the border; it also takes in bits of the neighbours, fine for now.
+COLOMBIA_BOX = ((-4.3, -82.0), (13.6, -66.8))
 
 
 def km_between(lat1, lon1, lat2, lon2):
@@ -43,12 +48,21 @@ def cell_center(cell):
     return (lat10 + 0.5) / 10, (lon10 + 0.5) / 10
 
 
+def demand_cells(devices):
+    """One cell per verified phone. With sensor_ids too it is a "limited" phone: far receptors,
+    strong quakes only, and it still asks for a closer one."""
+    return [device["demand_cell"] for device in devices.values()
+            if device.get("demand_cell") and device.get("verified_at")]
+
+
+def in_colombia(cell):
+    (lat_min, lon_min), (lat_max, lon_max) = COLOMBIA_BOX
+    lat, lon = cell_center(cell)
+    return lat_min <= lat <= lat_max and lon_min <= lon <= lon_max
+
+
 def demand_by_cell(devices):
-    counts = {}
-    for device in devices.values():
-        # A phone with sensor_ids and a cell is "limited": far receptors, strong quakes only.
-        if device.get("demand_cell") and device.get("verified_at"):
-            counts[device["demand_cell"]] = counts.get(device["demand_cell"], 0) + 1
+    counts = Counter(cell for cell in demand_cells(devices) if in_colombia(cell))
     return {cell: phones for cell, phones in counts.items() if phones >= MIN_CELL_PHONES}
 
 
@@ -114,15 +128,17 @@ def main(devices_path, sensors_path, alerts_path, out_path):
     with open(alerts_path) as handle:
         alerts = json.load(handle)
     proposals = propose(devices, sensors, alerts, budget_usd, receptor_monthly_usd)
+    ignored = sum(1 for cell in demand_cells(devices) if not in_colombia(cell))
     report = {"generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
               "budget_usd": budget_usd, "receptor_monthly_usd": receptor_monthly_usd,
-              "proposals": proposals}
+              "ignored_outside_colombia": ignored, "proposals": proposals}
     with open(out_path + ".tmp", "w") as handle:
         json.dump(report, handle, indent=1)
     os.replace(out_path + ".tmp", out_path)
     for proposal in proposals:
         print("RECEPTOR_PROPOSED " + " ".join(f"{key}={value}" for key, value in proposal.items()))
-    print(f"placement: {len(proposals)} proposal(s), budget_usd={budget_usd}")
+    print(f"placement: {len(proposals)} proposal(s), budget_usd={budget_usd}, "
+          f"ignored_outside_colombia={ignored}")
     return 0
 
 

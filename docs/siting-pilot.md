@@ -103,7 +103,9 @@ says so. This design keeps that: the phone sends only a coarse cell, which it co
 1. Demand record. When no receptor is eligible, the app registers with `demand_cell`
    instead of `sensor_ids`. When only far receptors serve it (level "limited", strong quakes
    only), it sends `demand_cell` together with `sensor_ids`, and the cell counts the same
-   (`docs/ios-contract.md`). The cell is a 0.1° grid (about 11 km):
+   (`docs/ios-contract.md`). Cells outside a box around Colombia (with San Andrés) are
+   stored but not counted, so reviewers and testers abroad do not pull a receptor; the job
+   logs how many it ignored. The cell is a 0.1° grid (about 11 km):
    `floor(lat*10),floor(lon*10)`, for example `"37,-755"`. It lives on the device record,
    so there is one cell per device, no extra id, and it goes away with the token (410 or
    DELETE). The app shows the same "Tu zona todavía no tiene cobertura." as today.

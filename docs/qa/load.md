@@ -227,3 +227,83 @@ certifier's receiver, not the host. At 13:25 its autopush socket had gone deaf a
 TCP gave up at 13:41, so the probe outlived its 60 s TTL. At 14:39 the socket went deaf seconds before
 autopush's ~20 min cut, and the push came on the reconnect, 23 s late. Fixed in push-receiver.mjs: the
 receiver reconnects after one unanswered ping, and on its own schedule every 15 min.
+
+## Store size: 10,000 and 100,000 iPhones (25-sep)
+
+Question: what breaks first when many phones are registered. Targets: fanout under 3 s,
+`POST /devices` p95 under 200 ms. Same Mac and method as above, `nice -n 10`, with the lab
+emulators running. The store is loaded straight into `devices.json` (so the 10,000 cap does
+not apply), each record shaped like a real one. Every phone follows the one sensor, the worst
+case for the fanout.
+
+```bash
+node docs/qa/load/devices.mjs 10000,100000     # POST /devices
+node docs/qa/load/run.mjs apns 10000,100000 10,100
+```
+
+### POST /devices (current code)
+
+200 phones that already exist register again, each from its own IP. "Loop stall" is the
+longest wait of a `GET /status` running beside them; alerts wait the same.
+
+| store | devices.json | one at a time p95 | 20 at once p50 / p95 | loop stall | max RSS |
+|---|---|---|---|---|---|
+| 10,000 | 2.2 MB | 12 ms | 212 / 242 ms | 82 ms | 547 MB |
+| 100,000 | 22 MB | 127 ms | 2.4 / 2.6 s | 1.2 s | 2.1 GB |
+
+Each call turns the whole store into JSON and queues its own copy of the file. Twenty at
+once means twenty full writes, one after the other, and twenty copies in memory. The first
+wall comes before that, though: `MAX_DEVICES` is 10,000, so from the 10,001st phone on every
+new registration gets `400 device limit reached`.
+
+### APNs fanout (current code)
+
+| iPhones | latency | delivered | requests | p50 | p95 | last | CPU | max RSS | loop stall |
+|---|---|---|---|---|---|---|---|---|---|
+| 10,000 | 10 ms | 10,000 | 10,000 | 287 ms | 352 ms | 353 ms | 0.72 s | 225 MB | 23 ms |
+| 10,000 | 100 ms | 10,000 | 10,000 | 368 ms | 549 ms | 565 ms | 0.73 s | 214 MB | 53 ms |
+| 100,000 | 10 ms | 100,000 | 100,000 | 1.6 s | 2.7 s | 2.8 s | 4.1 s | 680 MB | 90 ms |
+| 100,000 | 100 ms | 100,000 | 100,000 | 2.2 s | 4.0 s | 4.2 s | 4.2 s | 685 MB | 84 ms |
+
+No resends and no losses at any size. 10,000 is far inside the target. 100,000 on one sensor
+misses it at 100 ms, which is about the real round trip from São Paulo to APNs (not measured). Two limits:
+4 connections × 1,000 streams allow at most 4,000 pushes in flight, which is 2.5 s for
+100,000 at 100 ms. And the CPU: a profile shows 0.4 s spent in `JSON.parse("")` throwing on
+every empty 200 answer from APNs.
+
+### Smallest fixes (first measured on a temporary copy, now merged)
+
+| change | case | before | after |
+|---|---|---|---|
+| merge queued writes of `devices.json` into one | 10,000, 20 at once, p95 | 242 ms | 25 ms |
+| same | 100,000, 20 at once, p95 | 2.6 s | 259 ms |
+| same | 100,000, loop stall / max RSS | 1.2 s / 2.1 GB | 126 ms / 968 MB |
+| skip `JSON.parse` on an empty APNs body | 100,000 at 100 ms, last | 4.2 s | 3.7 s |
+| that plus 8 APNs connections | 100,000 at 100 ms, last | 4.2 s | 3.1 s |
+| same | 10,000 at 100 ms, last | 565 ms | 447 ms |
+
+- Merging writes: while a write is running, later calls share the next single write, which
+  takes the snapshot when it starts. About 15 lines in `createJsonFile`, and it helps all
+  stores. It fixes 10,000. At 100,000 each write still costs about 110 ms of JSON, so a burst
+  stays near the target, not under it. Going further needs an append-only log with periodic
+  compaction.
+- `MAX_DEVICES`: raising it is a decision, not a fix. It is the only guard against
+  mass fake registrations while `/devices` has no App Attest.
+- Fanout: the parse guard is 3 lines with no behavior change. 8 connections is 1 line, and
+  Apple allows it. With both, 100,000 on one sensor is still about 3.1 s here, CPU-bound
+  on one thread. Beyond that it needs the fanout split across worker processes, which is
+  not small.
+
+### After merging the three fixes (25-sep)
+
+| case | result |
+|---|---|
+| POST /devices, 10,000, 20 at once, p95 | 26 ms (one at a time 11 ms) |
+| POST /devices, 100,000, 20 at once, p95 | 219 ms (one at a time 137 ms) |
+| loop stall / max RSS, 100,000 store | 120 ms / 969 MB |
+| fanout 10,000 at 100 ms, last | 458 ms |
+| fanout 100,000 at 100 ms, last | 2.8 s (3.1 s in the run before: the edge of the target) |
+
+10,000 meets every target with room. About 100,000 iPhones on one sensor is the ceiling for
+the 3 s fanout, and a burst of registrations at 100,000 is just over 200 ms. `MAX_DEVICES`
+stays at 10,000 until App Attest.

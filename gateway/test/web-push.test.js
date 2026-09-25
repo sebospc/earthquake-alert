@@ -335,17 +335,17 @@ test("QA-24 lost and restored coverage is pushed once per transition, even acros
     await subscribe(first.port, "chaparral", CHAPARRAL);
 
     await wait(150);
-    assert.deepEqual(coveragePushes(), ["Sin cobertura en su zona"]);
+    assert.deepEqual(coveragePushes(), ["Servicio interrumpido"]);
 
     await first.close();
     const restarted = await startGateway(t, files);
     await wait(150);
-    assert.deepEqual(coveragePushes(), ["Sin cobertura en su zona"], "repeated after restart");
+    assert.deepEqual(coveragePushes(), ["Servicio interrumpido"], "repeated after restart");
 
     await signed(restarted.port, "/heartbeat", listenerBeat("chaparral"));
     await signed(restarted.port, "/heartbeat", watcherBeat("chaparral", true));
     await wait(150);
-    assert.deepEqual(coveragePushes(), ["Sin cobertura en su zona", "Cobertura restablecida"]);
+    assert.deepEqual(coveragePushes(), ["Servicio interrumpido", "Cobertura restablecida"]);
     assert.ok(pushed.every(endpoint => endpoint === CHAPARRAL));
   });
 
@@ -422,13 +422,13 @@ test("QA-34 when every push of an alert fails the sensor stops showing covered",
   const degraded = await sensorStatus(port, "chaparral");
   assert.equal(degraded.covered, false, "every push failed and the page stays green");
   assert.notEqual(degraded.degraded_since, null);
-  assert.deepEqual(coveragePushes(), ["Sin cobertura en su zona"]);
+  assert.deepEqual(coveragePushes(), ["Servicio interrumpido"]);
 
   pushServiceUp = true;
   await signed(port, "/events", alertFrom("chaparral"));
   await wait(150);
   assert.equal((await sensorStatus(port, "chaparral")).covered, true);
-  assert.deepEqual(coveragePushes(), ["Sin cobertura en su zona", "Cobertura restablecida"]);
+  assert.deepEqual(coveragePushes(), ["Servicio interrumpido", "Cobertura restablecida"]);
 });
 
 test("QA-36 users who left do not degrade a sensor, a broken push service does", async t => {

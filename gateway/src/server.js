@@ -1,4 +1,4 @@
-import { createHash, createHmac, createPrivateKey, sign, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, createPrivateKey, randomUUID, sign, timingSafeEqual } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { appendFile, readFile, rename, writeFile } from "node:fs/promises";
 import http from "node:http";
@@ -21,15 +21,22 @@ const MIN_MAGNITUDE_RANGE = [4.0, 7.0];
 const SAME_QUAKE_WINDOW_MS = 30_000;
 // Apple rejects provider tokens older than an hour and throttles fresher refreshes than 20 min.
 const PROVIDER_TOKEN_TTL_MS = 40 * 60_000;
-// The app has to be reinstalled for these; the token will never work again.
-const APNS_GONE_REASONS = new Set(["BadDeviceToken", "Unregistered", "DeviceTokenNotForTopic"]);
+// The app has to be reinstalled for these; the token will never work again. Not
+// DeviceTokenNotForTopic: a wrong APNS_BUNDLE_ID gives it for every phone, and deleting them
+// all would hide that config error behind "no active recipients".
+const APNS_GONE_REASONS = new Set(["BadDeviceToken", "Unregistered", "ExpiredToken"]);
+// Our side is wrong, not the phone: logged loudly, and the failed alerts degrade the sensor.
+const APNS_CONFIG_REASONS = new Set(["InvalidProviderToken", "MissingProviderToken", "BadTopic",
+  "MissingTopic", "TopicDisallowed", "DeviceTokenNotForTopic", "BadCertificateEnvironment"]);
+const APNS_CONFIG_LOG_EVERY_MS = 10 * 60_000;
 const PUSH_TIMEOUT_MS = 5_000;
 // Apple allows ~1000 concurrent streams per connection. More in flight only queue inside
 // Node, where they time out and get resent (measured: QA-61).
 const APNS_STREAMS_PER_CONNECTION = 1000;
 // Several connections, as Apple suggests for volume: at ~130 ms to APNs one connection
 // tops out near 7700 pushes/s, and a sensor may have tens of thousands of iPhones.
-const APNS_CONNECTIONS = 4;
+// 4 capped 100k pushes at 2.5 s of pure waiting at 100 ms; 8 took them from 3.7 to 3.1 s.
+const APNS_CONNECTIONS = 8;
 // Web push: one socket per send in flight. Also bounds how much encryption runs before the
 // event loop gets a turn (heartbeats, /status).
 const WEB_PUSH_MAX_IN_FLIGHT = 500;
@@ -49,7 +56,23 @@ const REGISTRATION_WINDOW_MS = 10 * 60_000;
 const REGISTRATIONS_PER_IP = { subscribe: 30, devices: 120 };
 const MONITOR_CLOCK_SKEW_S = 60;
 const PROBE_TTL_MS = 60_000;
+// The test button: one per phone per window, so a leaked token cannot be used to buzz a phone.
+const TEST_PUSH_WINDOW_MS = 10 * 60_000;
+const TEST_PUSH_TTL_MS = 60_000;
 const MAX_PROBE_ID_LENGTH = 64;
+// Arrival telemetry, test phones only: a batch per upload, the app retries on 429.
+const MAX_ARRIVALS_PER_UPLOAD = 500;
+const TELEMETRY_BODY_BYTES = 131_072;
+const TELEMETRY_UPLOADS_PER_WINDOW = 120;
+const MAX_ARRIVAL_EVENT_ID_LENGTH = 200;
+const ARRIVAL_KINDS = new Set(["alert", "test", "probe"]);
+const ARRIVAL_SOURCES = new Set(["nse", "app"]);
+const ARRIVAL_APP_STATES = new Set(["foreground", "background", "unknown"]);
+// Device test T5: 50 pushes, at least a second apart, so APNs sees a phone and not a flood.
+const MAX_BURST_PUSHES = 50;
+const BURST_INTERVAL_RANGE_MS = [1000, 60_000];
+// Dedup memory per test phone; a few hundred pushes a day, so this is weeks of them.
+const MAX_TELEMETRY_KEYS_PER_TOKEN = 20_000;
 const MAX_EVIDENCE_PAGE = 1000;
 const APNS_HOSTS = {
   production: "https://api.push.apple.com",
@@ -167,19 +190,33 @@ export function validateEvent(event, now = Date.now()) {
  */
 function userText(event, late, originAgeMs) {
   if (late) {
+    const minutes = String(Math.round(originAgeMs / 60_000));
     return {
       title: "Aviso de sismo atrasado",
-      body: `El sismo ocurrió hace ${Math.round(originAgeMs / 60_000)} min. Ya no es un aviso anticipado.`,
-      interruption_level: "active"
+      body: `El sismo ocurrió hace ${minutes} min. Ya no es un aviso anticipado.`,
+      interruption_level: "active",
+      loc: { titleKey: "LATE_ALERT_TITLE", bodyKey: "LATE_ALERT_BODY", args: [minutes] }
     };
   }
-  const magnitude = Number.isFinite(event.magnitude) ? event.magnitude : null;
+  const magnitude = Number.isFinite(event.magnitude) ? event.magnitude.toFixed(1) : null;
   return {
     title: "Alerta de sismo",
     body: magnitude === null
       ? "Posible sismo cerca de su zona. Protéjase ahora."
-      : `Sismo M${magnitude.toFixed(1)} cerca de su zona. Protéjase ahora.`
+      : `Sismo M${magnitude} cerca de su zona. Protéjase ahora.`,
+    loc: magnitude === null
+      ? { titleKey: "ALERT_TITLE", bodyKey: "ALERT_BODY_NO_MAGNITUDE", args: [] }
+      : { titleKey: "ALERT_TITLE", bodyKey: "ALERT_BODY_MAGNITUDE", args: [magnitude] }
   };
+}
+
+/**
+ * iOS renders the loc keys in the phone's language from the app's String Catalog; the keys
+ * and their args are listed in docs/ios-contract.md. Args are locale-neutral strings ("4.8"
+ * with a dot), the app formats them. title and body stay, in Spanish, for builds without keys.
+ */
+function localizedAlert(message, { titleKey, bodyKey, args = [] }) {
+  return { title: message.title, body: message.body, "title-loc-key": titleKey, "loc-key": bodyKey, "loc-args": args };
 }
 
 function base64url(value) {
@@ -230,9 +267,12 @@ function apnsRequest(client, token, headers, payload) {
     request.on("close", () => {
       clearTimeout(timer);
       let reason = null;
-      try {
-        reason = JSON.parse(responseBody).reason ?? null;
-      } catch {}
+      // A 200 has no body; a throw per push cost 0.4 s of CPU on 100k pushes.
+      if (responseBody) {
+        try {
+          reason = JSON.parse(responseBody).reason ?? null;
+        } catch {}
+      }
       // Reported as 410 so every caller treats a dead token like a dead web push endpoint.
       if (APNS_GONE_REASONS.has(reason)) status = 410;
       resolve({ token_suffix: token.slice(-8), status, reason, sent_at: sentAt, delivered_at: deliveredAt(status) });
@@ -258,7 +298,7 @@ const deliveredAt = status => (status >= 200 && status < 300 ? new Date().toISOS
 function apnsAlertPayload(event) {
   const withoutClosingBrace = JSON.stringify({
     aps: {
-      alert: { title: event.title, body: event.body },
+      alert: localizedAlert(event, event.loc),
       sound: "default",
       "interruption-level": event.interruption_level,
       "thread-id": "earthquake-alerts",
@@ -314,6 +354,24 @@ function validateDeviceToken(token) {
     throw new Error("invalid device_token");
   }
   return token.toLowerCase();
+}
+
+/** All or nothing: a batch with one bad item is refused whole, and the app drops it. */
+export function validateArrivals(arrivals) {
+  if (!Array.isArray(arrivals) || arrivals.length === 0 || arrivals.length > MAX_ARRIVALS_PER_UPLOAD) {
+    throw new Error("invalid arrivals");
+  }
+  const isEpochMs = value => Number.isSafeInteger(value) && value > 0;
+  return arrivals.map(arrival => {
+    const { kind, event_id: eventId, sent_at_ms: sentAtMs, received_at_ms: receivedAtMs, source,
+      app_state: appState } = arrival ?? {};
+    if (!ARRIVAL_KINDS.has(kind) || !ARRIVAL_SOURCES.has(source) || !ARRIVAL_APP_STATES.has(appState)
+        || typeof eventId !== "string" || eventId.length === 0 || eventId.length > MAX_ARRIVAL_EVENT_ID_LENGTH
+        || !isEpochMs(sentAtMs) || !isEpochMs(receivedAtMs)) {
+      throw new Error("invalid arrivals");
+    }
+    return { kind, eventId, sentAtMs, receivedAtMs, source, appState };
+  });
 }
 
 /**
@@ -378,21 +436,34 @@ export function validateHeartbeat(heartbeat, knownSensorIds, now = Date.now()) {
 
 // ponytail: the whole file lives in memory and is rewritten atomically on each change.
 // Fine for one process and a few thousand phones; move to SQLite past that.
-function createJsonFile(file, initial) {
+/**
+ * One write at a time, to a temp file then renamed, so a crash leaves the old or the new file,
+ * never half of one. Every persist() made while a write runs shares the single next write,
+ * which snapshots when it starts: with 100k phones a write per call queued 20 copies of a
+ * 22 MB file and held the event loop, alerts included, for 1.2 s (docs/qa/load.md).
+ * Each caller's promise settles once a write that includes its change is on disk.
+ */
+export function createJsonFile(file, initial) {
   const data = file && existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : initial;
-  let lastWrite = Promise.resolve();
+  let running = null;
+  let queued = null;
+  function write() {
+    queued = null;
+    const snapshot = JSON.stringify(data);
+    running = (async () => {
+      await writeFile(`${file}.tmp`, snapshot, { mode: 0o600 });
+      await rename(`${file}.tmp`, file);
+    })().finally(() => { running = null; });
+    return running;
+  }
   return {
     data,
     persist() {
       if (!file) return Promise.resolve();
-      const snapshot = JSON.stringify(data);
-      // Chained so two requests never interleave writes to the same temp file.
-      const write = lastWrite.then(async () => {
-        await writeFile(`${file}.tmp`, snapshot, { mode: 0o600 });
-        await rename(`${file}.tmp`, file);
-      });
-      lastWrite = write.catch(() => {});
-      return write;
+      if (queued) return queued;
+      if (!running) return write();
+      queued = running.catch(() => {}).then(write);
+      return queued;
     }
   };
 }
@@ -446,6 +517,8 @@ function createDeviceStore(file) {
     /** When APNs first accepted a push to this token; demand only counts after it. */
     verifiedAt: token => byToken[token]?.verified_at ?? null,
     minMagnitudeOf: (token, sensorId) => byToken[token]?.min_magnitude?.[sensorId] ?? null,
+    /** Test phones the monitor opted in; only they may upload arrival telemetry. */
+    telemetryEnabled: token => byToken[token]?.telemetry === true,
     // Replaces the whole set: the app calls this every time the phone moves. One demand
     // cell per token at most, so one phone can only ever weigh one.
     put(token, sensorIds, apnsEnv, demandCell = null, minMagnitude = {}) {
@@ -456,7 +529,14 @@ function createDeviceStore(file) {
       const told = Object.fromEntries(Object.entries(byToken[token]?.coverage_told ?? {})
         .filter(([sensorId]) => sensorIds.includes(sensorId)));
       byToken[token] = { platform: "ios", sensor_ids: sensorIds, apns_env: apnsEnv, coverage_told: told,
-        demand_cell: demandCell, min_magnitude: minMagnitude, verified_at: byToken[token]?.verified_at ?? null };
+        demand_cell: demandCell, min_magnitude: minMagnitude, verified_at: byToken[token]?.verified_at ?? null,
+        // Set by the monitor only: re-registering from the app must not drop it.
+        ...(byToken[token]?.telemetry === true && { telemetry: true }) };
+      return store.persist();
+    },
+    setTelemetry(token, enabled) {
+      if (enabled) byToken[token].telemetry = true;
+      else delete byToken[token].telemetry;
       return store.persist();
     },
     setVerified(token, at) {
@@ -484,6 +564,8 @@ const isGone = status => status === 404 || status === 410;
 // 429, 5xx, timeout and network errors can pass; 400/403/413 will fail the same way again.
 const isRetryable = status => status === 429 || status >= 500 || status === -1;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+// For waits that must not keep a closing process alive.
+const sleepUnref = ms => new Promise(resolve => setTimeout(resolve, Math.max(0, ms)).unref());
 
 /**
  * Runs `work(item, lane)` over `items` with at most `limit` at once; results keep the
@@ -528,20 +610,51 @@ function loadSensors() {
   return JSON.parse(readFileSync(SENSORS_FILE, "utf8")).sensors;
 }
 
-function loadConfig(env = process.env) {
+/** The .p8 from Apple, as a file path (simplest in a systemd env file) or inline with literal \\n escapes. */
+function readApnsKey(env) {
+  if (env.APNS_PRIVATE_KEY && env.APNS_PRIVATE_KEY_FILE) {
+    throw new Error("set APNS_PRIVATE_KEY or APNS_PRIVATE_KEY_FILE, not both");
+  }
+  if (env.APNS_PRIVATE_KEY_FILE) return readFileSync(env.APNS_PRIVATE_KEY_FILE, "utf8");
+  return (env.APNS_PRIVATE_KEY || "").replaceAll("\\n", "\n");
+}
+
+/**
+ * APNs only judges the key at the first push, which may be the first quake. Everything that
+ * can be checked here stops the start instead.
+ */
+export function checkApnsConfig({ teamId, keyId, bundleId, privateKey }) {
+  if (!/^[A-Z0-9]{10}$/.test(teamId)) throw new Error("invalid APNS_TEAM_ID: 10 letters or digits");
+  if (!/^[A-Z0-9]{10}$/.test(keyId)) throw new Error("invalid APNS_KEY_ID: 10 letters or digits");
+  if (!/^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/.test(bundleId)) throw new Error("invalid APNS_BUNDLE_ID");
+  let key;
+  try {
+    key = createPrivateKey(privateKey);
+  } catch (error) {
+    throw new Error(`invalid APNS private key: ${error.message}`);
+  }
+  if (key.asymmetricKeyType !== "ec" || key.asymmetricKeyDetails?.namedCurve !== "prime256v1") {
+    throw new Error("invalid APNS private key: not an Apple .p8 (EC P-256) key");
+  }
+  createProviderToken({ teamId, keyId, privateKey });
+}
+
+export function loadConfig(env = process.env) {
   const required = ["RELAY_HMAC_SECRET", "APNS_TEAM_ID", "APNS_KEY_ID", "APNS_BUNDLE_ID"];
-  if (env.APNS_DRY_RUN !== "1") required.push("APNS_PRIVATE_KEY");
+  const dryRun = env.APNS_DRY_RUN === "1";
+  if (!dryRun && !env.APNS_PRIVATE_KEY_FILE) required.push("APNS_PRIVATE_KEY");
   // Web push is optional, but half a VAPID config would fail only when an alert arrives.
   if (env.VAPID_PUBLIC_KEY) required.push("VAPID_PRIVATE_KEY", "VAPID_SUBJECT");
   for (const key of required) if (!env[key]) throw new Error(`missing ${key}`);
-  return {
+  const config = {
     hmacSecret: env.RELAY_HMAC_SECRET,
     teamId: env.APNS_TEAM_ID,
     keyId: env.APNS_KEY_ID,
     bundleId: env.APNS_BUNDLE_ID,
-    privateKey: (env.APNS_PRIVATE_KEY || "").replaceAll("\\n", "\n"),
-    dryRun: env.APNS_DRY_RUN === "1",
+    privateKey: dryRun ? "" : readApnsKey(env),
+    dryRun,
     evidenceFile: env.EVIDENCE_FILE || "gateway-evidence.jsonl",
+    telemetryFile: env.TELEMETRY_FILE || "telemetry.jsonl",
     // Optional: without it /probe, /evidence and monitor subscriptions answer 503.
     monitorKey: env.MONITOR_KEY || null,
     killSwitch: env.RELAY_KILL_SWITCH === "1",
@@ -558,6 +671,8 @@ function loadConfig(env = process.env) {
         }
       : null
   };
+  if (!dryRun) checkApnsConfig(config);
+  return config;
 }
 
 // Evidence is for us, delivery is for the user: a failed write must never turn an alert
@@ -579,13 +694,13 @@ function sendJson(response, status, body) {
 }
 
 /** Resolves null as soon as the body is too big. */
-function readBody(request) {
+function readBody(request, maxBytes = MAX_BODY_BYTES) {
   return new Promise(resolve => {
     const chunks = [];
     let size = 0;
     request.on("data", chunk => {
       size += chunk.length;
-      if (size > MAX_BODY_BYTES) resolve(null);
+      if (size > maxBytes) resolve(null);
       else chunks.push(chunk);
     });
     request.on("end", () => resolve(Buffer.concat(chunks)));
@@ -608,9 +723,17 @@ export function createServer(config) {
   // device token -> quakes it was already told about, so two sensors seeing one quake wake
   // the phone once. In memory: a restart can at worst repeat one alert.
   const notifiedQuakes = new Map();
+  // ponytail: in RAM, a restart resets it; bounded by the registered tokens (MAX_DEVICES).
+  const lastTestPushAt = new Map();
+  // ponytail: in RAM, a restart forgets them; the reader dedups on the same key anyway.
+  const telemetrySeen = new Map();
+  const telemetryUploads = new Map();
+  const burstsRunning = new Set();
+  let closed = false;
   // "env:slot" -> live HTTP/2 session. Sandbox and production are separate hosts.
   const apnsSessions = new Map();
   let providerToken = null;
+  const lastConfigRejectionLog = new Map();
   // Without keep-alive every web push pays its own TCP+TLS handshake and a socket (QA-63).
   const webPushAgent = new https.Agent({ keepAlive: true, maxSockets: WEB_PUSH_MAX_IN_FLIGHT });
   const vapidHeaders = new Map();
@@ -784,33 +907,53 @@ export function createServer(config) {
   }
 
   function currentProviderToken() {
-    if (!providerToken || Date.now() - providerToken.at > PROVIDER_TOKEN_TTL_MS) {
+    if (!providerToken || Date.now() - providerToken.at > (config.providerTokenTtlMs ?? PROVIDER_TOKEN_TTL_MS)) {
       providerToken = { value: createProviderToken(config), at: Date.now() };
     }
     return providerToken.value;
   }
 
-  function sendApns(token, payload, collapseId, deadlineMs, slot, pushType = "alert") {
+  function reportApnsConfigRejection(reason) {
+    const now = Date.now();
+    if (now - (lastConfigRejectionLog.get(reason) ?? -Infinity) < APNS_CONFIG_LOG_EVERY_MS) return;
+    lastConfigRejectionLog.set(reason, now);
+    console.error(`APNs rejects our configuration (${reason}): check APNS_TEAM_ID, APNS_KEY_ID, `
+      + "APNS_BUNDLE_ID and the .p8 key; iPhones get nothing until it is fixed");
+  }
+
+  async function sendApns(token, payload, collapseId, deadlineMs, slot, pushType = "alert") {
     if (config.dryRun) {
-      return Promise.resolve({ token_suffix: token.slice(-8), status: 200, dry_run: true,
-        sent_at: new Date().toISOString(), delivered_at: deliveredAt(200) });
+      return { token_suffix: token.slice(-8), status: 200, dry_run: true,
+        sent_at: new Date().toISOString(), delivered_at: deliveredAt(200) };
     }
-    let bearer;
-    try {
-      bearer = currentProviderToken();
-    } catch (error) {
-      return Promise.resolve({ token_suffix: token.slice(-8), status: -1, reason: error.message });
+    const send = async () => {
+      let bearer;
+      try {
+        bearer = currentProviderToken();
+      } catch (error) {
+        return { result: { token_suffix: token.slice(-8), status: -1, reason: error.message } };
+      }
+      const result = await apnsRequest(apnsClient(devices.apnsEnvOf(token), slot), token, {
+        authorization: `bearer ${bearer}`,
+        "apns-topic": config.bundleId,
+        "apns-push-type": pushType,
+        // Apple rejects priority 10 on a background push.
+        "apns-priority": pushType === "background" ? "5" : "10",
+        // Absolute time: APNs drops it once the warning is useless instead of delivering late.
+        "apns-expiration": String(Math.floor(deadlineMs / 1000)),
+        "apns-collapse-id": collapseId
+      }, payload);
+      return { result, bearer };
+    };
+    let { result, bearer } = await send();
+    // Apple's answer to a stale provider token: make a new one. Only if it is still the one
+    // in use, or a thousand pushes in flight would each mint one (TooManyProviderTokenUpdates).
+    if (result.reason === "ExpiredProviderToken") {
+      if (providerToken?.value === bearer) providerToken = null;
+      ({ result } = await send());
     }
-    return apnsRequest(apnsClient(devices.apnsEnvOf(token), slot), token, {
-      authorization: `bearer ${bearer}`,
-      "apns-topic": config.bundleId,
-      "apns-push-type": pushType,
-      // Apple rejects priority 10 on a background push.
-      "apns-priority": pushType === "background" ? "5" : "10",
-      // Absolute time: APNs drops it once the warning is useless instead of delivering late.
-      "apns-expiration": String(Math.floor(deadlineMs / 1000)),
-      "apns-collapse-id": collapseId
-    }, payload);
+    if (APNS_CONFIG_REASONS.has(result.reason)) reportApnsConfigRejection(result.reason);
+    return result;
   }
 
   /**
@@ -851,7 +994,12 @@ export function createServer(config) {
     payload, collapseId, deadlineMs, originMs);
   }
 
-  /** Never rejects. With `originMs`, a failed send releases that quake for the token. */
+  /**
+   * Never rejects. With `originMs`, a failed send releases that quake for the token.
+   * ponytail: one thread. Measured 25-sep (load.md), 100 ms to APNs: 10k in 0.46 s, 100k in
+   * 2.8-3.1 s, CPU-bound. So ~100k iPhones per sensor is the ceiling for the 3 s target; past
+   * that, split the tokens across worker processes.
+   */
   async function apnsToTokens(tokens, payload, collapseId, deadlineMs, originMs = null) {
     // Each worker keeps to one connection, so none carries more than Apple's stream limit.
     const results = await sendAllWithRetry(tokens, APNS_STREAMS_PER_CONNECTION * APNS_CONNECTIONS,
@@ -981,13 +1129,17 @@ export function createServer(config) {
   function coveragePayload(sensorId, covered) {
     const message = covered
       ? { title: "Cobertura restablecida", body: "Las alertas de su zona vuelven a funcionar." }
-      : { title: "Sin cobertura en su zona", body: "No confíe en esta app por ahora." };
+      : { title: "Servicio interrumpido", body: "Ahora mismo no podemos avisarle." };
+    const loc = covered
+      ? { titleKey: "COVERAGE_RESTORED_TITLE", bodyKey: "COVERAGE_RESTORED_BODY" }
+      : { titleKey: "SERVICE_DOWN_TITLE", bodyKey: "SERVICE_DOWN_BODY" };
     return {
       message,
       // A phone may follow up to 3 sensors: sensor_id and covered let the app decide
       // whether its zone as a whole lost coverage.
       apnsPayload: JSON.stringify({
-        aps: { alert: message, sound: "default", "interruption-level": "active", "mutable-content": 1 },
+        aps: { alert: localizedAlert(message, loc), sound: "default", "interruption-level": "active",
+          "mutable-content": 1 },
         kind: "coverage", sensor_id: sensorId, covered
       })
     };
@@ -1033,7 +1185,8 @@ export function createServer(config) {
       sensor_ids: device.sensorIds,
       ...(device.demandCell && { demand_cell: device.demandCell }),
       ...(Object.keys(device.minMagnitude ?? {}).length > 0 && { min_magnitude: device.minMagnitude }),
-      apns_env: device.apnsEnv
+      apns_env: device.apnsEnv,
+      ...(devices.telemetryEnabled(device.token) && { telemetry: true })
     });
     if (device.sensorIds.length === 0) tellNoCoverageYet(device.token);
     else tellNewDeviceAboutLostCoverage(device.token, device.sensorIds);
@@ -1062,13 +1215,200 @@ export function createServer(config) {
     if (devices.verifiedAt(token)) return;
     const message = { title: "Sin cobertura en su zona", body: "Su zona todavía no tiene cobertura." };
     const payload = JSON.stringify({
-      aps: { alert: message, sound: "default", "interruption-level": "active" },
+      aps: {
+        alert: localizedAlert(message, { titleKey: "NO_COVERAGE_TITLE", bodyKey: "NO_COVERAGE_BODY" }),
+        sound: "default",
+        "interruption-level": "active"
+      },
       kind: "coverage", sensor_id: null, covered: false, reason: "no_receptor"
     });
     apnsToTokens([token], payload, "coverage:none", Date.now() + COVERAGE_PUSH_TTL_MS)
       .then(([result]) => isDelivered(result.status)
         ? devices.setVerified(token, new Date().toISOString()) : undefined)
       .catch(error => console.error(`no-coverage notice failed: ${error.message}`));
+  }
+
+  /**
+   * "Enviar alerta de prueba": how a real alert sounds, on demand (App Review cannot wait for a
+   * quake). Not a quake: no dedup entry, no evidence record (the certifier never sees it), and
+   * its outcome never degrades a channel.
+   */
+  function handleTestPush(request, response, raw) {
+    if (!allowRegistration(request, response, "devices")) return;
+    // A test that rings while real alerts are off would tell the user they are protected.
+    if (config.killSwitch) {
+      sendJson(response, 503, { error: "relay paused" });
+      return;
+    }
+    const token = validateDeviceToken(JSON.parse(raw.toString("utf8")).device_token);
+    if (!devices.has(token)) {
+      sendJson(response, 404, { error: "unknown device_token" });
+      return;
+    }
+    const now = Date.now();
+    if (now - (lastTestPushAt.get(token) ?? -Infinity) < TEST_PUSH_WINDOW_MS) {
+      sendJson(response, 429, { error: "one test alert per 10 min" });
+      return;
+    }
+    lastTestPushAt.set(token, now);
+    const eventId = `test:${randomUUID()}`;
+    const payload = JSON.stringify({
+      aps: {
+        alert: localizedAlert(
+          { title: "Alerta de prueba", body: "Así sonará una alerta de sismo. Esto es solo una prueba." },
+          { titleKey: "TEST_ALERT_TITLE", bodyKey: "TEST_ALERT_BODY" }),
+        sound: "default",
+        // Never critical: a test must not get past the silent switch the way a quake might.
+        "interruption-level": "time-sensitive",
+        "mutable-content": 1
+      },
+      kind: "test",
+      // Unique, so the phone's arrival telemetry dedups on it like on an alert's.
+      event_id: eventId,
+      sent_at_ms: now
+    });
+    sendJson(response, 202, { sent_at_ms: now, event_id: eventId });
+    sendApns(token, payload, `test:${token.slice(0, 8)}`, now + TEST_PUSH_TTL_MS, 0)
+      .catch(error => console.error(`test push failed: ${error.message}`));
+  }
+
+  /** Monitor only: opts a test phone in to arrival telemetry and APNs bursts, or out. */
+  async function handleTelemetrySwitch(request, response, raw) {
+    if (!monitorAuthorized(request, response, raw)) return;
+    const { device_token: deviceToken, enabled } = JSON.parse(raw.toString("utf8"));
+    const token = validateDeviceToken(deviceToken);
+    if (typeof enabled !== "boolean") throw new Error("invalid enabled");
+    if (!devices.has(token)) {
+      sendJson(response, 404, { error: "unknown device_token" });
+      return;
+    }
+    await devices.setTelemetry(token, enabled);
+    sendJson(response, 200, { telemetry: enabled });
+  }
+
+  function allowTelemetryUpload(token) {
+    const now = Date.now();
+    const window = telemetryUploads.get(token);
+    if (!window || now - window.start > REGISTRATION_WINDOW_MS) {
+      telemetryUploads.set(token, { start: now, count: 1 });
+      return true;
+    }
+    window.count += 1;
+    return window.count <= TELEMETRY_UPLOADS_PER_WINDOW;
+  }
+
+  /**
+   * When each push reached a test iPhone, against the gateway's sent_at_ms: the APNs leg of the
+   * certifier's chain. Own file, no state shared with the fanout, so nothing a phone uploads
+   * can slow or break an alert.
+   */
+  async function handleArrivals(request, response, raw) {
+    const body = JSON.parse(raw.toString("utf8"));
+    const token = validateDeviceToken(body.device_token);
+    // One answer for unknown and not opted in: a guessed token learns nothing.
+    if (!devices.telemetryEnabled(token)) {
+      sendJson(response, 404, { error: "unknown device_token or telemetry off" });
+      return;
+    }
+    if (!allowTelemetryUpload(token)) {
+      sendJson(response, 429, { error: "too many uploads" });
+      return;
+    }
+    const arrivals = validateArrivals(body.arrivals);
+    const seenKeys = telemetrySeen.get(token) ?? new Set();
+    telemetrySeen.set(token, seenKeys);
+    const fresh = [];
+    for (const arrival of arrivals) {
+      const key = `${arrival.eventId}\n${arrival.source}`;
+      if (seenKeys.has(key)) continue;
+      seenKeys.add(key);
+      fresh.push({ key, arrival });
+    }
+    for (const oldest of seenKeys) {
+      if (seenKeys.size <= MAX_TELEMETRY_KEYS_PER_TOKEN) break;
+      seenKeys.delete(oldest);
+    }
+    const at = new Date().toISOString();
+    const lines = fresh.map(({ arrival }) => `${JSON.stringify({
+      type: "ARRIVAL", at, token_suffix: token.slice(-8), kind: arrival.kind, event_id: arrival.eventId,
+      source: arrival.source, app_state: arrival.appState, sent_at_ms: arrival.sentAtMs,
+      received_at_ms: arrival.receivedAtMs, latency_ms: arrival.receivedAtMs - arrival.sentAtMs
+    })}\n`).join("");
+    if (lines) {
+      try {
+        await appendFile(config.telemetryFile, lines, { mode: 0o600 });
+      } catch (error) {
+        // Not stored, so not seen: the app's retry must be able to store it.
+        for (const { key } of fresh) seenKeys.delete(key);
+        console.error(`telemetry write failed: ${error.message}`);
+        sendJson(response, 503, { error: "telemetry not stored" });
+        return;
+      }
+    }
+    sendJson(response, 202, { stored: fresh.length, duplicates: arrivals.length - fresh.length });
+  }
+
+  /**
+   * Device test T5: `n` pushes to one opted-in test phone, `interval_ms` apart, each with its
+   * own event_id so the phone's arrivals pair with them. Skips the test button's 10 min limit;
+   * the monitor key and the opt-in are the guard. One burst per phone at a time.
+   */
+  async function handleApnsBurst(request, response, raw) {
+    if (!monitorAuthorized(request, response, raw)) return;
+    const { device_token: deviceToken, n, interval_ms: intervalMs } = JSON.parse(raw.toString("utf8"));
+    const token = validateDeviceToken(deviceToken);
+    if (!Number.isInteger(n) || n < 1 || n > MAX_BURST_PUSHES) throw new Error("invalid n");
+    const [minIntervalMs, maxIntervalMs] = BURST_INTERVAL_RANGE_MS;
+    if (!Number.isInteger(intervalMs) || intervalMs < minIntervalMs || intervalMs > maxIntervalMs) {
+      throw new Error("invalid interval_ms");
+    }
+    if (!devices.telemetryEnabled(token)) {
+      sendJson(response, 404, { error: "unknown device_token or telemetry off" });
+      return;
+    }
+    if (burstsRunning.has(token)) {
+      sendJson(response, 409, { error: "burst already running" });
+      return;
+    }
+    const probeId = randomUUID();
+    burstsRunning.add(token);
+    sendJson(response, 202, { probe_id: probeId, n, interval_ms: intervalMs });
+    runBurst(token, probeId, n, intervalMs)
+      .catch(error => console.error(`apns burst failed: ${error.message}`))
+      .finally(() => burstsRunning.delete(token));
+  }
+
+  /** Paced from the start, not from each answer: a slow APNs reply must not stretch the burst. */
+  async function runBurst(token, probeId, n, intervalMs) {
+    const startMs = Date.now();
+    const sends = [];
+    for (let seq = 1; seq <= n; seq += 1) {
+      await sleepUnref(startMs + (seq - 1) * intervalMs - Date.now());
+      // Stops once the token is gone (APNs said so on an earlier push) or the gateway closes.
+      if (closed || !devices.has(token)) break;
+      const eventId = `probe:${probeId}:${seq}`;
+      const withoutClosingBrace = JSON.stringify({
+        aps: {
+          alert: { title: "Prueba de entrega", body: `Prueba ${seq} de ${n}. No es un sismo.` },
+          sound: "default",
+          "interruption-level": "active",
+          "mutable-content": 1
+        },
+        kind: "probe",
+        event_id: eventId,
+        probe_id: probeId,
+        seq
+      }).slice(0, -1);
+      sends.push(apnsToTokens([token], sentAtMs => `${withoutClosingBrace},"sent_at_ms":${sentAtMs}}`,
+        eventId, Date.now() + PROBE_TTL_MS)
+        .then(([result]) => ({ seq, event_id: eventId, ...result })));
+    }
+    const results = await Promise.all(sends);
+    // The APNs side of T5; the phone side comes through /telemetry/arrivals.
+    await recordEvidence(config.evidenceFile, {
+      type: "APNS_BURST", at: new Date().toISOString(), probe_id: probeId, token_suffix: token.slice(-8),
+      n, interval_ms: intervalMs, results
+    });
   }
 
   // Idempotent: 204 whether or not the token was registered, so the app can simply retry.
@@ -1149,7 +1489,7 @@ export function createServer(config) {
 
   // ponytail: reads the whole evidence file per call. Fine for a certifier polling every
   // minute; an index or rotation when the file gets big.
-  async function handleEvidence(request, response) {
+  async function handleEvidence(request, response, file) {
     if (!monitorAuthorized(request, response, Buffer.alloc(0))) return;
     const query = new URL(request.url, "http://gateway").searchParams;
     const since = Date.parse(query.get("since") ?? "");
@@ -1158,7 +1498,7 @@ export function createServer(config) {
     if (!Number.isInteger(limit) || limit < 1) throw new Error("invalid limit");
     let lines = [];
     try {
-      lines = (await readFile(config.evidenceFile, "utf8")).split("\n");
+      lines = (await readFile(file, "utf8")).split("\n");
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
     }
@@ -1187,6 +1527,8 @@ export function createServer(config) {
       // Lets the certifier see every restart of this process from outside.
       started_at: new Date(startedAt).toISOString(),
       relay_enabled: !config.killSwitch,
+      // True means no iPhone gets anything: fine in the lab, an outage in production.
+      apns_dry_run: config.dryRun === true,
       web_push_public_key: config.vapid?.publicKey ?? null,
       // Heartbeats live in memory on purpose: after a restart every sensor shows as
       // uncovered until it reports again, which errs on the visible side.
@@ -1221,6 +1563,10 @@ export function createServer(config) {
     if (!config.killSwitch && now - startedAt < (config.startupGraceMs ?? STALE_AFTER_MS)) return;
     for (const sensor of sensors) {
       const health = sensorHealth(sensor.id, now);
+      // Taken in the same tick as `health`: a phone that registers during the awaits below
+      // registered against a newer state and must not get this one.
+      const webTargets = subscriptions.list(sensor.id).map(subscription => ({ sensorId: sensor.id, subscription }));
+      const apnsTokens = devices.tokensFor(sensor.id);
       // Per channel: only the people whose channel changed hear about it.
       for (const channel of ["webpush", "apns"]) {
         const covered = health[`covered_${channel}`];
@@ -1236,9 +1582,9 @@ export function createServer(config) {
         // Sent even on a degraded channel: it may have recovered. If it has not, its users
         // cannot be told this way; gateway-watchdog tells the operator, naming the channel.
         const results = channel === "webpush"
-          ? await pushToSensor(sensor.id, { kind: "coverage", tag, late: false, ...message },
+          ? await pushTo(webTargets, { kind: "coverage", tag, late: false, ...message },
             now + COVERAGE_PUSH_TTL_MS)
-          : await tellCoverage(sensor.id, devices.tokensFor(sensor.id), covered, now + COVERAGE_PUSH_TTL_MS);
+          : await tellCoverage(sensor.id, apnsTokens, covered, now + COVERAGE_PUSH_TTL_MS);
         await recordEvidence(config.evidenceFile, {
           type: covered ? "COVERAGE_RESTORED" : "COVERAGE_LOST",
           at: new Date(now).toISOString(), sensor_id: sensor.id, channel, results
@@ -1262,8 +1608,14 @@ export function createServer(config) {
     "POST /subscribe": handleSubscribe,
     "POST /devices": handleDevice,
     "DELETE /devices": handleDeviceRemoval,
-    "POST /probe": handleProbe
+    "POST /devices/test": handleTestPush,
+    "POST /devices/telemetry": handleTelemetrySwitch,
+    "POST /telemetry/arrivals": handleArrivals,
+    "POST /probe": handleProbe,
+    "POST /probe/apns-burst": handleApnsBurst
   };
+  // Up to 500 arrivals per upload; every other body stays small.
+  const bodyLimits = { "POST /telemetry/arrivals": TELEMETRY_BODY_BYTES };
 
   const server = http.createServer(async (request, response) => {
     const path = new URL(request.url, "http://gateway").pathname;
@@ -1271,13 +1623,16 @@ export function createServer(config) {
       if (request.method === "GET" && path === "/status") {
         handleStatus(response);
       } else if (request.method === "GET" && path === "/evidence") {
-        await handleEvidence(request, response);
+        await handleEvidence(request, response, config.evidenceFile);
+      } else if (request.method === "GET" && path === "/telemetry") {
+        // Same paging as /evidence, over the arrivals test phones uploaded.
+        await handleEvidence(request, response, config.telemetryFile);
       } else if (request.method === "GET" && staticFiles.has(path)) {
         await serveStatic(response, staticFiles.get(path));
       } else if (bodyRoutes[`${request.method} ${path}`]) {
         // Headers in, body not yet read: accepted_at minus this is the upload plus validation.
         const receivedAt = new Date().toISOString();
-        const raw = await readBody(request);
+        const raw = await readBody(request, bodyLimits[`${request.method} ${path}`]);
         if (raw === null) {
           response.writeHead(413, { connection: "close" }).end();
           return;
@@ -1303,6 +1658,7 @@ export function createServer(config) {
   }, config.coverageCheckMs ?? 60_000);
   coverageTimer.unref();
   server.on("close", () => {
+    closed = true;
     clearInterval(coverageTimer);
     for (const session of apnsSessions.values()) session.destroy();
     webPushAgent.destroy();
@@ -1312,6 +1668,7 @@ export function createServer(config) {
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const config = loadConfig();
+  if (config.dryRun) console.error("APNS_DRY_RUN=1: every APNs push is faked, no iPhone gets anything");
   const port = Number(process.env.PORT || 8787);
   createServer(config).listen(port, "127.0.0.1", () => {
     console.log(`gateway listening on http://127.0.0.1:${port}`);

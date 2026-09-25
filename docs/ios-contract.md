@@ -42,6 +42,7 @@ so a sandbox token is never sent to production or deleted because of `BadDeviceT
 | `400 {"error": "invalid sensor_ids"}` | empty, more than 3, duplicates, unknown or not public |
 | `201 {"sensor_ids": [], "demand_cell": "37,-755", "apns_env": "..."}` | registered outside coverage |
 | `201 {"sensor_ids": [...], "demand_cell": "...", "min_magnitude": {...}, "apns_env": "..."}` | registered as "limited". Each of the two fields is only there when it was sent |
+| `201 {..., "telemetry": true}` | a test phone the operator opted in to arrival telemetry. Absent means off. The app cannot turn it on; see "Arrival telemetry" |
 | `400 {"error": "invalid demand_cell"}` | not `"<int>,<int>"`, or out of range |
 | `400 {"error": "invalid min_magnitude"}` | not an object, a key not in `sensor_ids`, a value that is not a number from 4.0 to 7.0, or sent without `sensor_ids` |
 | `400 {"error": "device limit reached"}` | the server already has 10,000 tokens and this one is new |
@@ -53,7 +54,7 @@ On 429 or 5xx, the app retries with backoff and shows "not registered" until it 
 201.
 
 If any of the receptors is **new** for that token and is not covered at that moment,
-the server immediately sends it the "Sin cobertura" push for that receptor. It is one per
+the server immediately sends it the "Servicio interrumpido" push for that receptor. It is one per
 new receptor: registering the same set again does not repeat it. That way, when
 "Cobertura restablecida" arrives later, the phone already knew it was down.
 
@@ -112,12 +113,137 @@ is malformed. It counts against the same limit of 120 per IP as `POST /devices`.
 calls it when the user turns alerts off. Leaving all coverage is a `POST /devices` with
 `demand_cell`, not a DELETE.
 
+## POST /devices/test
+
+"Enviar alerta de prueba": sends one test push to a registered phone, so the user (and App
+Review, who cannot wait for a quake) hears how an alert sounds.
+
+```json
+{ "device_token": "a1b2..." }
+```
+
+| response | when |
+|---|---|
+| `202 {"sent_at_ms": 1790194180512, "event_id": "test:6f1c...-..."}` | queued; the push goes out right after |
+| `400 {"error": "invalid device_token"}` | malformed token, or invalid JSON |
+| `404 {"error": "unknown device_token"}` | the token is not registered |
+| `429 {"error": "one test alert per 10 min"}` | this token already got one in the last 10 min |
+| `429 {"error": "too many subscriptions"}` | over the per-IP limit it shares with `/devices` (120 in 10 min) |
+| `503 {"error": "relay paused"}` | the operator's kill switch is on: real alerts are off, so nothing is sent. The app shows "Servicio interrumpido" |
+
+The push:
+
+```json
+{
+  "aps": {
+    "alert": { "title": "Alerta de prueba", "body": "Así sonará una alerta de sismo. Esto es solo una prueba.",
+               "title-loc-key": "TEST_ALERT_TITLE", "loc-key": "TEST_ALERT_BODY", "loc-args": [] },
+    "sound": "default",
+    "interruption-level": "time-sensitive",
+    "mutable-content": 1
+  },
+  "kind": "test",
+  "event_id": "test:6f1c...-...",
+  "sent_at_ms": 1790194180512
+}
+```
+
+Headers `apns-priority: 10`, `apns-expiration` 60 s after `sent_at_ms`, `apns-collapse-id`
+`test:<first 8 characters of the token>`. It is never `critical`. `sent_at_ms` and `event_id`
+are the same values as in the 202. `event_id` is new for every test push, so arrival
+telemetry dedups on it.
+
+It is not a quake: it does not count for the per-quake dedup, it is not in the evidence the
+certifier reads, and a failed test push does not mark the receptor as degraded. With
+`kind: "test"` the NSE must not fire AlarmKit or anything a real alert does beyond the
+sound. The per-token limit is kept in the gateway's memory, so a restart resets it.
+
 ### No authentication, on purpose for now
 
-Today `/devices` has no auth. **App Attest once the app exists.** Meanwhile the
+Today `/devices` and `/devices/test` have no auth. **App Attest once the app exists.** Meanwhile the
 risk is low: a made-up token only produces `BadDeviceToken` on the first push and the
 server deletes it, and the per-IP rate limit stops mass abuse. What someone who knows a
-real token can do is change its receptors. The token is not public.
+real token can do is change its receptors, or make it play one test alert every 10 min. The
+token is not public.
+
+## Arrival telemetry (test phones only)
+
+This is how we measure the real chain: quake, receptor, gateway, APNs, iPhone. Each push that
+carries `sent_at_ms` (alert, test, probe) is logged by the NSE and the app, and a test phone
+uploads those arrivals. Normal users never upload anything.
+
+Opt-in is set by the operator with the monitor key, not by the app. The 201 of
+`POST /devices` then carries `"telemetry": true`, and re-registering keeps it. Without that
+flag the app does not upload.
+
+### POST /telemetry/arrivals
+
+```json
+{
+  "device_token": "a1b2...",
+  "arrivals": [
+    { "kind": "alert", "event_id": "chaparral:...", "sent_at_ms": 1790194180512,
+      "received_at_ms": 1790194180931, "source": "nse", "app_state": "background" }
+  ]
+}
+```
+
+| field | rule |
+|---|---|
+| `arrivals` | 1 to 500 items. One bad item refuses the whole batch |
+| `kind` | `"alert"`, `"test"` or `"probe"`, from the push |
+| `event_id` | from the push, 1 to 200 characters |
+| `sent_at_ms` | from the push (gateway clock), integer epoch ms |
+| `received_at_ms` | when the phone got it (phone clock), integer epoch ms |
+| `source` | `"nse"` (Notification Service Extension) or `"app"` (the app saw it) |
+| `app_state` | `"foreground"`, `"background"` or `"unknown"` at arrival. QA splits the numbers on it |
+
+| response | when |
+|---|---|
+| `202 {"stored": 2, "duplicates": 1}` | stored. The same `(device_token, event_id, source)` is stored once; a resend counts as a duplicate |
+| `400 {"error": "invalid arrivals"}` | any item breaks a rule above. Drop the batch, do not retry it |
+| `400 {"error": "invalid device_token"}` | malformed token, or invalid JSON |
+| `404 {"error": "unknown device_token or telemetry off"}` | not registered, or not opted in. Stop uploading |
+| `413` | body over 128 KB |
+| `429 {"error": "too many uploads"}` | more than 120 uploads from this token in 10 min |
+| `503 {"error": "telemetry not stored"}` | the server could not write it. Retry, it is not marked as seen |
+
+On 429 or 5xx, retry later with backoff. The upload never touches the alert path: it has its
+own file and shares nothing with the fanout.
+
+`received_at_ms - sent_at_ms` mixes two clocks. iPhone clocks are usually within a second
+of real time, so read the median over many pushes, not one value.
+
+### Probe push (device test T5)
+
+The operator can send a burst of up to 50 pushes, at least 1 s apart, to one opted-in test
+phone. It skips the 10 min limit of the test button. Each push:
+
+```json
+{
+  "aps": {
+    "alert": { "title": "Prueba de entrega", "body": "Prueba 3 de 50. No es un sismo." },
+    "sound": "default",
+    "interruption-level": "active",
+    "mutable-content": 1
+  },
+  "kind": "probe",
+  "event_id": "probe:<probe_id>:3",
+  "probe_id": "<uuid>",
+  "seq": 3,
+  "sent_at_ms": 1790194180512
+}
+```
+
+Headers `apns-priority: 10`, `apns-expiration` 60 s after sending, `apns-collapse-id` equal
+to `event_id`. With `kind: "probe"` the NSE logs the arrival and shows the text as it is.
+It is not a quake: no AlarmKit, no dedup, nothing else.
+
+Operator routes, all signed with the monitor key (not for the app):
+`POST /devices/telemetry {"device_token", "enabled"}`,
+`POST /probe/apns-burst {"device_token", "n", "interval_ms"}` (202 with `probe_id`, 409 while
+one runs for that phone, 404 unless opted in) and `GET /telemetry?since=` (same paging as
+`/evidence`). The burst writes one `APNS_BURST` evidence record with the APNs answer per push.
 
 ## APNs push
 
@@ -129,12 +255,41 @@ They are told apart by `kind` and, within alerts, by `late`.
 
 `event_id` and `collapse-id` are **opaque**: the app does not extract information from them.
 
+### Localized text
+
+Every visible push the gateway writes carries `title-loc-key`, `loc-key` and `loc-args` in
+`aps.alert`. iOS looks the keys up in the app's String Catalog and shows the text in the
+phone's language. `title` and `body` are still sent, in Spanish, as the reference text.
+
+This table is the single list of keys. The String Catalog and every translation use exactly
+these keys and argument order:
+
+| push | `title-loc-key` | `loc-key` | `loc-args` | Spanish reference |
+|---|---|---|---|---|
+| alert with magnitude | `ALERT_TITLE` | `ALERT_BODY_MAGNITUDE` | `[magnitude]` | "Alerta de sismo" / "Sismo M%@ cerca de su zona. Protéjase ahora." |
+| alert without magnitude | `ALERT_TITLE` | `ALERT_BODY_NO_MAGNITUDE` | `[]` | "Alerta de sismo" / "Posible sismo cerca de su zona. Protéjase ahora." |
+| late alert | `LATE_ALERT_TITLE` | `LATE_ALERT_BODY` | `[minutes]` | "Aviso de sismo atrasado" / "El sismo ocurrió hace %@ min. Ya no es un aviso anticipado." |
+| test alert | `TEST_ALERT_TITLE` | `TEST_ALERT_BODY` | `[]` | "Alerta de prueba" / "Así sonará una alerta de sismo. Esto es solo una prueba." |
+| receptor down | `SERVICE_DOWN_TITLE` | `SERVICE_DOWN_BODY` | `[]` | "Servicio interrumpido" / "Ahora mismo no podemos avisarle." |
+| receptor back | `COVERAGE_RESTORED_TITLE` | `COVERAGE_RESTORED_BODY` | `[]` | "Cobertura restablecida" / "Las alertas de su zona vuelven a funcionar." |
+| no receptor yet | `NO_COVERAGE_TITLE` | `NO_COVERAGE_BODY` | `[]` | "Sin cobertura en su zona" / "Su zona todavía no tiene cobertura." |
+
+- `loc-args` are always strings, never localized by the server. `magnitude` has one decimal
+  and a dot (`"4.8"`, `"5.0"`); `minutes` is a whole number (`"3"`). In the catalog use `%@`
+  (or `%1$@`). To show "4,8" in a comma locale, the NSE formats `magnitude` from the payload.
+- A new language only needs catalog entries. No server change.
+- Trap: if the app's catalog lacks a key, iOS shows the key itself (`ALERT_TITLE`), not the
+  Spanish `title`. So every build must ship all keys in its base language. The NSE can also
+  fall back to `title`/`body` when the text it receives equals the key.
+- The probe push (test phones only) and Web Push stay Spanish, without keys.
+
 ### Alert
 
 ```json
 {
   "aps": {
-    "alert": { "title": "Alerta de sismo", "body": "Sismo M4.8 cerca de su zona. Protéjase ahora." },
+    "alert": { "title": "Alerta de sismo", "body": "Sismo M4.8 cerca de su zona. Protéjase ahora.",
+               "title-loc-key": "ALERT_TITLE", "loc-key": "ALERT_BODY_MAGNITUDE", "loc-args": ["4.8"] },
     "sound": "default",
     "interruption-level": "time-sensitive",
     "thread-id": "earthquake-alerts",
@@ -180,6 +335,7 @@ posted the notice if missing). The text changes and the level goes down:
 - `title`: `"Aviso de sismo atrasado"`
 - `body`: `"El sismo ocurrió hace N min. Ya no es un aviso anticipado."`
 - `interruption-level`: `"active"`
+- keys: `LATE_ALERT_TITLE` / `LATE_ALERT_BODY`, `loc-args: ["N"]`
 
 With `late: true` the app does not say "protéjase" nor fire AlarmKit. It also does not recompute the
 delay with the phone clock.
@@ -189,7 +345,8 @@ delay with the phone clock.
 ```json
 {
   "aps": {
-    "alert": { "title": "Sin cobertura en su zona", "body": "No confíe en esta app por ahora." },
+    "alert": { "title": "Servicio interrumpido", "body": "Ahora mismo no podemos avisarle.",
+               "title-loc-key": "SERVICE_DOWN_TITLE", "loc-key": "SERVICE_DOWN_BODY", "loc-args": [] },
     "sound": "default",
     "interruption-level": "active",
     "mutable-content": 1
@@ -201,11 +358,11 @@ delay with the phone clock.
 ```
 
 With `covered: true` the text is `"Cobertura restablecida"` / `"Las alertas de su zona
-vuelven a funcionar."`. It expires after 12 h.
+vuelven a funcionar."`, keys `COVERAGE_RESTORED_TITLE` / `COVERAGE_RESTORED_BODY`. It expires after 12 h.
 
 It is sent **per receptor** and each phone gets it only when it changes **for that phone**:
-"Sin cobertura" if it had not been told yet (for example on registration, above), and
-"Cobertura restablecida" only if it got "Sin cobertura" before. The server remembers the
+"Servicio interrumpido" if it had not been told yet (for example on registration, above), and
+"Cobertura restablecida" only if it got "Servicio interrumpido" before. The server remembers the
 last notice per phone and receptor.
 A phone that follows 3 receptors can get one for each receptor that changes. With
 `sensor_id` and `covered` the app decides whether its whole zone lost coverage or whether another
@@ -222,7 +379,8 @@ Once per token, on the first `POST /devices` with `demand_cell`:
 ```json
 {
   "aps": {
-    "alert": { "title": "Sin cobertura en su zona", "body": "Su zona todavía no tiene cobertura." },
+    "alert": { "title": "Sin cobertura en su zona", "body": "Su zona todavía no tiene cobertura.",
+               "title-loc-key": "NO_COVERAGE_TITLE", "loc-key": "NO_COVERAGE_BODY", "loc-args": [] },
     "sound": "default",
     "interruption-level": "active"
   },
@@ -256,6 +414,7 @@ Accepted limits:
   "now": "2026-09-24T10:05:00.000Z",
   "started_at": "2026-09-24T09:00:00.000Z",
   "relay_enabled": true,
+  "apns_dry_run": false,
   "web_push_public_key": "...",
   "sensors": [{
     "id": "chaparral",
@@ -283,6 +442,8 @@ Accepted limits:
   app does not present it as an alarm if it lasts less than 5 min. The server also does not send "sin
   cobertura" in the first 15 min after starting.
 - `started_at` in the response says when the gateway started.
+- `apns_dry_run: true` means the gateway fakes every APNs push, as in the lab today. No
+  iPhone gets anything.
 
 ## sensors.json and coverage levels
 
@@ -329,12 +490,13 @@ The rows are checked in this order; the first that matches wins:
 | condition | level | text (UI, Spanish) |
 |---|---|---|
 | 1. no eligible receptor | none | Su zona todavía no tiene cobertura. Registered with `demand_cell` only |
-| 2. every chosen receptor has `covered_apns: false`, or `/status` does not answer | down | Sin cobertura en su zona. No confíe en esta app por ahora. |
+| 2a. every chosen receptor has `covered_apns: false` | down | Servicio interrumpido. Ahora mismo no podemos avisarle. Lo estamos arreglando. |
+| 2b. `/status` does not answer | down | Servicio interrumpido. Ahora mismo no podemos avisarle. Revise su conexión a internet. |
 | 3. miss share at M5.0 ≤ 10% | full | Cobertura completa |
 | 4. miss share at M5.0 ≤ 40% | partial | Cobertura parcial: algunos sismos pequeños podrían no avisarse. |
 | 5. higher | limited | Cobertura limitada: solo le avisaremos de sismos fuertes. Registered with `demand_cell` too |
 
-"down" uses the same words as the "Sin cobertura" push, and it is red. It is not "none": the
+"down" has the same title as the lost-coverage push, and it is red. It is not "none": the
 receptors exist, they are just not working now, so the app keeps its `sensor_ids` and does
 not change its registration. The 5 min grace for a `/status` that does not answer (see
 `GET /status`) applies here too.

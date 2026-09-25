@@ -2,6 +2,7 @@
 // Failure paths where an alert is lost or pushed twice without anyone noticing; ids point
 // to docs/qa/review.md.
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { createHmac, generateKeyPairSync } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import http from "node:http";
@@ -20,6 +21,16 @@ const PRIVATE_KEY = generateKeyPairSync("ec", { namedCurve: "P-256" })
 const PHONE = "ab".repeat(32);
 const OTHER_PHONE = "cd".repeat(32);
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+/** Polls the evidence file until a record matches, instead of guessing a sleep. */
+async function evidenceRecord(config, matches, timeoutMs = 5000) {
+  for (const deadline = Date.now() + timeoutMs; Date.now() < deadline; await wait(10)) {
+    const text = await readFile(config.evidenceFile, "utf8").catch(() => "");
+    const found = text.trim().split("\n").filter(Boolean).map(line => JSON.parse(line)).find(matches);
+    if (found) return found;
+  }
+  throw new Error("evidence record never written");
+}
 
 // Fake APNs over cleartext HTTP/2. `answer(stream, push)` replies; every push is recorded.
 async function startApns(t, answer = stream => { stream.respond({ ":status": 200 }); stream.end(); }) {
@@ -62,7 +73,6 @@ const reject = (status, reason) => stream => {
 
 async function startGateway(t, overrides) {
   const directory = await mkdtemp(join(tmpdir(), "relay-apns-"));
-  t.after(() => rm(directory, { recursive: true, force: true }));
   const config = {
     hmacSecret: SECRET,
     teamId: "TEAM",
@@ -82,6 +92,9 @@ async function startGateway(t, overrides) {
   const server = createServer(config);
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   t.after(() => new Promise(resolve => server.close(resolve)));
+  // After the close (hooks run in order), with retries: a coverage check or evidence write
+  // still in flight can add a file while the directory is removed (ENOTEMPTY on slow runners).
+  t.after(() => rm(directory, { recursive: true, force: true, maxRetries: 5 }));
   return { config, port: server.address().port };
 }
 
@@ -197,6 +210,9 @@ test("a late alert reaches the phone as active, never time-sensitive", async t =
   assert.equal(payload.late, true);
   assert.equal(payload.aps["interruption-level"], "active");
   assert.doesNotMatch(payload.aps.alert.body, /Protéjase/);
+  assert.deepEqual(payload.aps.alert, { title: "Aviso de sismo atrasado",
+    body: "El sismo ocurrió hace 3 min. Ya no es un aviso anticipado.",
+    "title-loc-key": "LATE_ALERT_TITLE", "loc-key": "LATE_ALERT_BODY", "loc-args": ["3"] });
 });
 
 test("a phone following two sensors that saw one quake is woken once", async t => {
@@ -440,8 +456,13 @@ test("QA-59 an APNs-only outage warns the iPhones and leaves the web alone", asy
     return { statusCode: 201 };
   });
   t.after(() => mock.restoreAll());
-  const { port } = await startGateway(t, {
-    apnsHost: apns.url, startupGraceMs: 0, coverageCheckMs: 20,
+  // The grace keeps the coverage check quiet until the sensor is set up. Without it, a check
+  // before the heartbeats sees the sensor down, and the next one tells the new web phone
+  // "restored" (a CI failure on a slow runner).
+  const graceMs = 1000;
+  const startedAt = Date.now();
+  const { port, config } = await startGateway(t, {
+    apnsHost: apns.url, startupGraceMs: graceMs, coverageCheckMs: 20,
     vapid: { subject: "mailto:qa@example.com", publicKey: "public", privateKey: "private" }
   });
   for (const extra of [{}, { aea_ok: true }]) {
@@ -454,17 +475,52 @@ test("QA-59 an APNs-only outage warns the iPhones and leaves the web alone", asy
     endpoint: "https://fcm.googleapis.com/fcm/send/pwa-phone",
     keys: { p256dh: Buffer.alloc(65, 4).toString("base64url"), auth: Buffer.alloc(16, 1).toString("base64url") }
   } }));
-  await wait(100);
+  assert.ok(Date.now() - startedAt < graceMs, "setup took longer than the grace: this run proves nothing");
 
   await sendEvent(port, alertFrom("chaparral"));
-  await wait(200);
+  await evidenceRecord(config, record => record.type === "COVERAGE_LOST" && record.sensor_id === "chaparral"
+    && record.channel === "apns");
 
   const status = await sensorStatus(port, "chaparral");
   assert.deepEqual([status.covered_apns, status.covered_webpush], [false, true]);
-  assert.equal(apns.all.filter(push => push.payload.kind === "coverage").length, 1,
+  assert.deepEqual(apns.all.filter(push => push.payload.kind === "coverage").map(push => push.payload.aps.alert),
+    [{ title: "Servicio interrumpido", body: "Ahora mismo no podemos avisarle.",
+      "title-loc-key": "SERVICE_DOWN_TITLE", "loc-key": "SERVICE_DOWN_BODY", "loc-args": [] }],
     "the iPhones were not told");
   assert.deepEqual(webPushes.filter(message => message.kind === "coverage"), [],
     "the web got a false 'no coverage' push");
+});
+
+// The coverage check decides "down", then waits on its state file. A phone that registers in
+// that gap registered against a sensor that is up again: it must not get the old "lost".
+// A FIFO as the temp file holds the check inside that wait for as long as the test needs.
+test("a phone that registers while a coverage check is mid-way does not get its stale news", async t => {
+  const apns = await startApns(t);
+  const directory = await mkdtemp(join(tmpdir(), "relay-coverage-race-"));
+  const coverageFile = join(directory, "coverage.json");
+  execFileSync("mkfifo", [`${coverageFile}.tmp`]);
+  const { port, config } = await startGateway(t, {
+    apnsHost: apns.url, startupGraceMs: 0, coverageCheckMs: 20, coverageFile
+  });
+  t.after(() => rm(directory, { recursive: true, force: true, maxRetries: 5 }));
+  // No heartbeat yet: the first check finds chaparral down and blocks writing that down.
+  await wait(100);
+  for (const extra of [{}, { aea_ok: true }]) {
+    const raw = JSON.stringify({ sensor_id: "chaparral", sent_at: new Date().toISOString(), ...extra });
+    await request(port, "POST", "/heartbeat", raw,
+      { "x-relay-signature": createHmac("sha256", sensorKey(SECRET, "chaparral")).update(raw).digest("hex") });
+  }
+  await register(port, PHONE, ["chaparral"]);
+
+  const heldWrite = JSON.parse(await readFile(`${coverageFile}.tmp`, "utf8"));
+  // The web channel is written first; the APNs "down" for chaparral follows it.
+  assert.equal(heldWrite["chaparral:webpush"], "down", "the check was not held mid-way: this run proves nothing");
+  await evidenceRecord(config, record => record.type === "COVERAGE_LOST" && record.sensor_id === "chaparral"
+    && record.channel === "apns");
+  await evidenceRecord(config, record => record.type === "COVERAGE_RESTORED" && record.sensor_id === "chaparral"
+    && record.channel === "apns");
+  assert.deepEqual(apns.all.filter(push => push.payload.kind === "coverage").map(push => push.payload.covered), [],
+    "the phone heard news older than its registration");
 });
 
 // docs/ios-contract.md, the APNs push, alert and per-quake dedup sections: what an iPhone app is
@@ -495,7 +551,8 @@ test("contract: a fake iPhone following 2 sensors gets ONE alert, shaped as the 
       "kind", "late", "magnitude", "sensor_id", "sent_at_ms", "time_occurred_s"]);
     assert.deepEqual(payload.aps, {
       // The gateway writes the text itself; the receiver's title and body are never shown.
-      alert: { title: "Alerta de sismo", body: "Sismo M4.8 cerca de su zona. Protéjase ahora." },
+      alert: { title: "Alerta de sismo", body: "Sismo M4.8 cerca de su zona. Protéjase ahora.",
+        "title-loc-key": "ALERT_TITLE", "loc-key": "ALERT_BODY_MAGNITUDE", "loc-args": ["4.8"] },
       sound: "default",
       "interruption-level": "time-sensitive",
       "thread-id": "earthquake-alerts",
@@ -645,6 +702,10 @@ test("QA-77 each phone hears each coverage change once, and 'restored' only if i
     await wait(150);
     assert.deepEqual(heard(PHONE), [false, true]);
     assert.deepEqual(heard(OTHER_PHONE), [], "'restored' to a phone that never heard 'lost'");
+    const restored = apns.all.find(push => push.token === PHONE && push.payload.covered === true);
+    assert.deepEqual(restored.payload.aps.alert, { title: "Cobertura restablecida",
+      body: "Las alertas de su zona vuelven a funcionar.", "title-loc-key": "COVERAGE_RESTORED_TITLE",
+      "loc-key": "COVERAGE_RESTORED_BODY", "loc-args": [] });
   });
 
 // The receiver's own title and body never reach a phone, and no text carries a distance:
@@ -660,9 +721,26 @@ test("the gateway writes the alert text, whatever the receiver sent", async t =>
   await wait(150);
 
   const byToken = Object.fromEntries(apns.pushes.map(push => [push.token, push.payload.aps.alert]));
-  assert.deepEqual(byToken[PHONE], { title: "Alerta de sismo", body: "Sismo M4.5 cerca de su zona. Protéjase ahora." });
-  assert.deepEqual(byToken[OTHER_PHONE], { title: "Alerta de sismo", body: "Posible sismo cerca de su zona. Protéjase ahora." });
+  assert.deepEqual(byToken[PHONE], { title: "Alerta de sismo", body: "Sismo M4.5 cerca de su zona. Protéjase ahora.",
+    "title-loc-key": "ALERT_TITLE", "loc-key": "ALERT_BODY_MAGNITUDE", "loc-args": ["4.5"] });
+  assert.deepEqual(byToken[OTHER_PHONE], { title: "Alerta de sismo", body: "Posible sismo cerca de su zona. Protéjase ahora.",
+    "title-loc-key": "ALERT_TITLE", "loc-key": "ALERT_BODY_NO_MAGNITUDE", "loc-args": [] });
   assert.equal(apns.pushes.some(push => /km/.test(JSON.stringify(push.payload.aps))), false, "a distance reached a phone");
+});
+
+// The phone renders the text in its own language from these keys (docs/ios-contract.md).
+test("magnitude args are locale-neutral strings with a dot and one decimal", async t => {
+  const apns = await startApns(t);
+  const { port } = await startGateway(t, { apnsHost: apns.url });
+  await register(port, PHONE, ["chaparral"]);
+  const origin = Math.floor(Date.now() / 1000);
+
+  for (const [index, magnitude] of [5, 6.25, 4.04].entries()) {
+    await sendEvent(port, alertFrom("chaparral", { magnitude, time_occurred_s: origin - 100 + index * 40 }));
+    await wait(100);
+  }
+
+  assert.deepEqual(apns.pushes.map(push => push.payload.aps.alert["loc-args"]), [["5.0"], ["6.3"], ["4.0"]]);
 });
 
 test("demand: a phone outside coverage leaves only its 0.1° cell, counted after one APNs 200", async t => {
@@ -679,7 +757,8 @@ test("demand: a phone outside coverage leaves only its 0.1° cell, counted after
   const told = apns.all.filter(push => push.token === PHONE);
   assert.equal(told.length, 1);
   assert.deepEqual(told[0].payload, {
-    aps: { alert: { title: "Sin cobertura en su zona", body: "Su zona todavía no tiene cobertura." },
+    aps: { alert: { title: "Sin cobertura en su zona", body: "Su zona todavía no tiene cobertura.",
+      "title-loc-key": "NO_COVERAGE_TITLE", "loc-key": "NO_COVERAGE_BODY", "loc-args": [] },
       sound: "default", "interruption-level": "active" },
     kind: "coverage", sensor_id: null, covered: false, reason: "no_receptor"
   });
@@ -810,6 +889,74 @@ test("min_magnitude: a far phone skips weaker alerts from that receptor, never a
   const cellOnly = await request(port, "POST", "/devices", JSON.stringify(
     { device_token: PHONE, demand_cell: "37,-755", min_magnitude: {}, platform: "ios" }));
   assert.equal(cellOnly.status, 400, "min_magnitude without sensors");
+});
+
+// "Enviar alerta de prueba" (App Review cannot wait for a quake). Sounds like an alert but is
+// not a quake: nothing a real alert depends on may notice it.
+test("devices/test: one test alert per phone per 10 min, shaped as the contract says", async t => {
+  const apns = await startApns(t);
+  const { port, config } = await startGateway(t, { apnsHost: apns.url });
+  const testPush = token => request(port, "POST", "/devices/test", JSON.stringify({ device_token: token }));
+  await register(port, PHONE, ["chaparral"]);
+
+  const before = Date.now();
+  const answer = await testPush(PHONE);
+  assert.equal(answer.status, 202);
+  const { sent_at_ms: sentAtMs, event_id: eventId } = JSON.parse(answer.body);
+  assert.ok(sentAtMs >= before && sentAtMs <= Date.now());
+  assert.match(eventId, /^test:[0-9a-f-]{36}$/, "no unique event_id for arrival telemetry to dedup on");
+  await wait(150);
+  const [push, ...more] = apns.pushes;
+  assert.equal(more.length, 0);
+  assert.deepEqual(push.payload, {
+    aps: { alert: { title: "Alerta de prueba", body: "Así sonará una alerta de sismo. Esto es solo una prueba.",
+      "title-loc-key": "TEST_ALERT_TITLE", "loc-key": "TEST_ALERT_BODY", "loc-args": [] },
+      sound: "default", "interruption-level": "time-sensitive", "mutable-content": 1 },
+    kind: "test", event_id: eventId, sent_at_ms: sentAtMs
+  });
+  assert.equal(push.headers["apns-push-type"], "alert");
+  assert.equal(push.headers["apns-priority"], "10");
+  assert.equal(push.headers["apns-collapse-id"], `test:${PHONE.slice(0, 8)}`);
+  assert.equal(Number(push.headers["apns-expiration"]), Math.floor((sentAtMs + 60_000) / 1000));
+
+  assert.equal((await testPush(PHONE)).status, 429, "a second test inside 10 min");
+  // Real alerts off: the test must not ring, and must not use up the phone's slot.
+  await register(port, OTHER_PHONE, ["chaparral"]);
+  config.killSwitch = true;
+  const paused = await testPush(OTHER_PHONE);
+  assert.deepEqual([paused.status, JSON.parse(paused.body)], [503, { error: "relay paused" }]);
+  await wait(100);
+  assert.equal(apns.pushes.length, 1, "a test push went out with the relay paused");
+  config.killSwitch = false;
+  assert.equal((await testPush(OTHER_PHONE)).status, 202, "the paused attempt did not use up the slot");
+  assert.equal((await testPush("ef".repeat(32))).status, 404, "unknown token");
+  assert.equal((await testPush("not-a-token")).status, 400);
+  await wait(100);
+  assert.deepEqual(apns.pushes.map(push => push.token), [PHONE, OTHER_PHONE]);
+});
+
+test("devices/test: a failed test push degrades nothing, records nothing and leaves the quake unclaimed", async t => {
+  const apns = await startApns(t, (stream, push) => (push.payload.kind === "test"
+    ? reject(403, "InvalidProviderToken")(stream)
+    : (stream.respond({ ":status": 200 }), stream.end())));
+  const { port, config } = await startGateway(t, { apnsHost: apns.url });
+  for (const extra of [{}, { aea_ok: true }]) {
+    const raw = JSON.stringify({ sensor_id: "chaparral", sent_at: new Date().toISOString(), ...extra });
+    await request(port, "POST", "/heartbeat", raw,
+      { "x-relay-signature": createHmac("sha256", sensorKey(SECRET, "chaparral")).update(raw).digest("hex") });
+  }
+  await register(port, PHONE, ["chaparral"]);
+  assert.equal((await request(port, "POST", "/devices/test", JSON.stringify({ device_token: PHONE }))).status, 202);
+  await wait(150);
+
+  const status = await sensorStatus(port, "chaparral");
+  assert.deepEqual([status.covered_apns, status.degraded_since], [true, null], "a test push degraded the channel");
+  const evidence = await readFile(config.evidenceFile, "utf8").catch(() => "");
+  assert.equal(evidence, "", "a test push reached the evidence the certifier reads");
+
+  await sendEvent(port, alertFrom("chaparral"));
+  await wait(250);
+  assert.deepEqual(apns.pushes.map(push => push.payload.kind), ["test", "alert"]);
 });
 
 // Demand-driven siting: a phone outside coverage registers only its 0.1° cell. It must never be

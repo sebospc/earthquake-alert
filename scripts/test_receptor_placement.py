@@ -35,7 +35,10 @@ assert placement.demand_by_cell(devices) == {"71,-732": 3, "40,-750": 3}, placem
 # A phone that moved into coverage registers without a cell (the gateway stores null).
 covered = {"x": {"sensor_ids": ["chaparral"], "demand_cell": None, "verified_at": VERIFIED}} | phones("40,-750", 2)
 assert placement.demand_by_cell(covered) == {}, placement.demand_by_cell(covered)
-print("PASS demand: verified phones only, 3 or more per cell, limited phones (sensors + cell) count")
+# Reviewers and testers abroad: Cupertino and Madrid never count. San Andrés and Leticia do.
+abroad = {**phones("373,-1221", 5), **phones("404,-37", 5), **phones("125,-818", 3), **phones("-42,-700", 3)}
+assert placement.demand_by_cell(abroad) == {"125,-818": 3, "-42,-700": 3}, placement.demand_by_cell(abroad)
+print("PASS demand: verified phones only, 3 or more per cell, limited phones (sensors + cell) count, Colombia only")
 
 # --- grouping and score ---------------------------------------------------------------
 
@@ -87,7 +90,7 @@ assert placement.alerts_per_year(3.7236, -75.4836, real_alerts) > 0, "Chaparral 
 with tempfile.TemporaryDirectory() as directory:
     paths = {name: os.path.join(directory, f"{name}.json") for name in ("devices", "sensors", "out")}
     with open(paths["devices"], "w") as handle:
-        json.dump(phones("71,-732", 10), handle)
+        json.dump({**phones("71,-732", 10), **phones("373,-1221", 4), **phones("404,-37", 1, verified=False)}, handle)
     with open(paths["sensors"], "w") as handle:
         json.dump(NO_SENSORS, handle)
     os.environ.pop("AUTO_RECEPTOR_BUDGET_USD", None)
@@ -98,6 +101,8 @@ with tempfile.TemporaryDirectory() as directory:
     with open(paths["out"]) as handle:
         report = json.load(handle)
     assert report["budget_usd"] == 0 and len(report["proposals"]) == 1
+    assert report["ignored_outside_colombia"] == 4, report
+    assert "ignored_outside_colombia=4" in printed.getvalue()
     assert report["proposals"][0]["auto_create"] is False
     assert "RECEPTOR_PROPOSED lat=" in printed.getvalue() and "auto_create=False" in printed.getvalue()
     # Before any phone registered, there is no devices.json yet.
