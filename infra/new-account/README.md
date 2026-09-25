@@ -11,6 +11,9 @@ work; this page lists what only a person can do, and what changes for users.
    passphrase apart (e.g. the file on a disk, the passphrase in a password manager). Never put
    the file in the repo; the script refuses to.
 2. Take the backup as late as possible: every subscription made after it is lost.
+3. Or use the host's own hourly backup (same format, same passphrase, in the deploy bucket under
+   `gateway-state/`): `infra/backup/fetch-latest.sh` downloads the newest one and checks it. This is
+   also the way back when the host or its disk is lost in the same account.
 
 ## Human-only steps in the new account
 

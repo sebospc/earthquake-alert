@@ -1,4 +1,4 @@
-# The three alarms for one receptor host, fed by aea-cw-probe.py with Host=<instance id>.
+# The alarms for one receptor host, fed by aea-cw-probe.py (backup-stale: by infra/backup) with Host=<instance id>.
 # One stack per host, so a dead host cannot hide behind a healthy one. Needs stack.yml first.
 #   aws cloudformation deploy --region sa-east-1 --stack-name aea-lab-alarms-<instance id> \
 #     --template-file infra/cloudwatch/host-alarms.yml \
@@ -53,6 +53,25 @@ Resources:
   # The swapfile is an emergency buffer (vm.swappiness=1), not capacity: swap in real use
   # means the host is over its RAM budget and an emulator may page out during an alert.
   # The fix is to take the extra canary emulator off, not to wait.
+  # infra/backup/gateway-state-backup.sh sends GatewayBackupOk=1 after each hourly upload. None
+  # in 2 h: the newest backup is too old, and losing the disk now would unsubscribe every iPhone.
+  GatewayBackupStaleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub aea-lab-${Host}-backup-stale
+      AlarmDescription: !Sub No gateway state backup uploaded for 2 h on ${Host}. Check `journalctl -u aea-gateway-backup` for GATEWAY_BACKUP_FAILED.
+      Namespace: AeaLab
+      MetricName: GatewayBackupOk
+      Dimensions: [{ Name: Host, Value: !Ref Host }]
+      Statistic: Sum
+      Period: 7200
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!ImportValue aea-lab-alert-topic]
+      OKActions: [!ImportValue aea-lab-alert-topic]
+
   SwapInUseAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:

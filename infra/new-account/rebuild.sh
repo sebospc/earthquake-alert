@@ -166,10 +166,12 @@ for serial in $(awk 'NF >= 2 {print $1}' <<<"$sensor_map"); do
 done
 on_host "cd ~/earthquake-alert/scripts && sudo ./aws-bootstrap.sh listener /tmp/listener.apk $listener_pairs" | tail -3
 
-step "CloudWatch: shared stack, agent and probe, host alarms"
+step "CloudWatch: shared stack, agent and probe, hourly backup, host alarms"
 aws cloudformation deploy --stack-name aea-lab-cloudwatch --template-file "$ROOT/infra/cloudwatch/stack.yml" \
   --no-fail-on-empty-changeset --tags project=aea-lab --parameter-overrides "AlertEmail=$ALERT_EMAIL"
 on_host 'sudo ~/earthquake-alert/infra/cloudwatch/install.sh' | tail -2
+# Before the alarms: backup-stale pages until the first upload. Same passphrase as this backup.
+on_host 'sudo ~/earthquake-alert/infra/backup/install.sh' <<<"$AEA_BACKUP_PASS" | tail -2
 journal_hostname=$(on_host hostname)
 aws cloudformation deploy --stack-name "aea-lab-alarms-$instance_id" --template-file "$ROOT/infra/cloudwatch/host-alarms.yml" \
   --no-fail-on-empty-changeset --tags project=aea-lab \
@@ -206,7 +208,7 @@ alarm_states=$(aws cloudwatch describe-alarms --alarm-name-prefix "aea-lab-$inst
 echo "$alarm_states"
 # Every host alarm must exist: no alarms at all must not read as "all OK" (QA-95).
 missing_alarms=""
-for alarm in gateway-down receptor-uncovered swap-in-use memory-low location-age aea-not-ok nudge-failed; do
+for alarm in gateway-down receptor-uncovered backup-stale swap-in-use memory-low location-age aea-not-ok nudge-failed; do
   [[ $'\n'$alarm_states == *$'\n'"aea-lab-$instance_id-$alarm"$'\t'* ]] || missing_alarms+=" $alarm"
 done
 [[ -z $missing_alarms ]] || leftover+=("host alarms MISSING:$missing_alarms (check the aea-lab-alarms-$instance_id stack)")

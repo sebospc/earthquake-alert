@@ -26,8 +26,9 @@ Resources:
       Url: https://token.actions.githubusercontent.com
       ClientIdList: [sts.amazonaws.com]
 
-  # Build artifacts on their way to the host. The host fetches them over short presigned URLs,
-  # so it needs no S3 permission of its own.
+  # Build artifacts on their way to the host, and the host's hourly backups under gateway-state/.
+  # The host fetches artifacts over short presigned URLs. The 30-day expiry is also the backup
+  # retention.
   ArtifactBucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -82,7 +83,8 @@ Resources:
                 Action: [ssm:GetCommandInvocation, ssm:ListCommandInvocations]
                 Resource: "*"
 
-  # On the receptor host: SSM Run Command and the CloudWatch agent. Nothing else.
+  # On the receptor host: SSM Run Command, the CloudWatch agent, and writing its hourly state
+  # backup (infra/backup). Write only: the host cannot read a backup back or list the bucket.
   ReceptorRole:
     Type: AWS::IAM::Role
     Properties:
@@ -96,6 +98,14 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
         - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+      Policies:
+        - PolicyName: gateway-state-backup
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub ${ArtifactBucket.Arn}/gateway-state/*
   ReceptorInstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:

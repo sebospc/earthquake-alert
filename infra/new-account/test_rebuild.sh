@@ -66,7 +66,7 @@ case "$1 $2" in
   "ssm put-parameter") file=$(sed -n 's/.*file:\/\/\([^ ]*\).*/\1/p' <<<"$*"); cp "$file" "$STATE/origin-secret" ;;
   "cloudwatch describe-alarms")
     [[ -n ${FAKE_NO_ALARMS:-} ]] && exit 0
-    for alarm in gateway-down receptor-uncovered swap-in-use memory-low location-age aea-not-ok nudge-failed; do
+    for alarm in gateway-down receptor-uncovered backup-stale swap-in-use memory-low location-age aea-not-ok nudge-failed; do
       printf 'aea-lab-i-1-%s\tOK\n' "$alarm"
     done ;;
   *) echo "fake aws: unexpected $*" >&2; exit 9 ;;
@@ -82,6 +82,7 @@ case "$command" in
   true) ;;
   "test -e /var/lib/aea-restored") [[ -e $STATE/restored ]] ;;
   *"tar -xzpf -"*) cat > "$STATE/restored-payload"; touch "$STATE/restored" ;;
+  *"backup/install.sh"*) cat > "$STATE/backup-pass" ;;
   hostname) echo ip-10-0-0-1 ;;
   *"getprop sys.boot_completed"*) echo 1 ;;
   *"127.0.0.1:8787/status"*)
@@ -149,12 +150,13 @@ order_of() { grep -n -m1 -- "$1" "$LOG" | cut -d: -f1; }
 previous=0
 for mark in "create-service-linked-role" "--stack-name aea-lab-deploy" "run-instances" "--stack-name aea-lab-https" \
             "ssh sudo tar -xzpf -" "aws-bootstrap.sh$" "aws-bootstrap.sh listener /tmp/listener.apk emulator-5554=chaparral emulator-5556=quibdo" \
-            "--stack-name aea-lab-cloudwatch" "cloudwatch/install.sh" "--stack-name aea-lab-alarms-i-1" "https/install.sh" "gh variable set"; do
+            "--stack-name aea-lab-cloudwatch" "cloudwatch/install.sh" "backup/install.sh" "--stack-name aea-lab-alarms-i-1" "https/install.sh" "gh variable set"; do
   line=$(order_of "$mark"); [[ -n $line ]] || fail "step never ran: $mark"
   ((line > previous)) || fail "step out of order: $mark"
   previous=$line
 done
 grep -q "EMULATOR_COUNT=2 " "$LOG" || fail "EMULATOR_COUNT must come from the backup's map"
+[[ $(cat "$WORK/state/backup-pass") == "$PASS_FOR_TEST" ]] || fail "the hourly backup must get the backup's passphrase on stdin"
 grep -q "RELAY_HMAC_SECRET=dummy" <(tar -xzOf "$WORK/state/restored-payload" etc/earthquake-gateway.env) \
   || fail "the restore must carry the gateway env"
 grep -q "0123456789abcdef" "$WORK/state/origin-secret" || fail "the origin secret must come from the backup"
@@ -177,7 +179,7 @@ grep -q "receptors not covered yet (missing: quibdo)" <<<"$output" || fail "an u
 echo "PASS an uncovered receptor is reported, not passed"
 
 output=$(FAKE_NO_ALARMS=1 run_rebuild) || fail "no-alarms run: $output"
-grep -q "host alarms MISSING: gateway-down receptor-uncovered swap-in-use memory-low location-age aea-not-ok nudge-failed" <<<"$output" \
+grep -q "host alarms MISSING: gateway-down receptor-uncovered backup-stale swap-in-use memory-low location-age aea-not-ok nudge-failed" <<<"$output" \
   || fail "no alarms at all must be reported missing: $output"
 grep -q "MONITOR_INSTANCE=i-1" <<<"$output" || fail "the certifier repoint must be a leftover"
 echo "PASS missing alarms are reported, and the certifier repoint is listed"
