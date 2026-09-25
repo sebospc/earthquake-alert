@@ -202,20 +202,28 @@ Plan ($0): the canaries general-santos and glan run as emulators 3 and 4 on the 
 (2 vCPU) as chaparral and quibdo. There is no synthetic alert, so the "before and after" compares what
 CPU contention would show on the alert path. Read-only, 2026-09-25 00:31 UTC, 2 emulators running:
 
-| measure | before (2 emulators) | after (4 emulators) |
+| measure | before (2 emulators) | after (3 emulators: + general-santos, 8 h, 25-sep 20:07Z) |
 |---|---|---|
-| host load average (1/5/15 min) | 0.24 / 0.23 / 0.19 | |
-| host CPU (vmstat, 5 s samples) | us 2–10 %, idle 82–92 %, steal 0 | |
-| host memory used / available | 7.6 GB / 8.1 GB | |
-| RSS per emulator, qemu, after 10.7 h (chaparral / quibdo) | 3.42 GB / 3.71 GB | |
-| busiest emulator (top) | 10 % of a vCPU | |
-| adb shell round trip, p50 of 5 (chaparral / quibdo) | 13 ms / 14 ms | |
-| full GMS dumpsys (chaparral / quibdo) | 0.20 s / 0.12 s | |
-| certifier probe, monitor → gateway → push → monitor, 24 h (n=10) | p50 0.67 s, p95 0.76 s | |
-| real alert, listener → monitor corrected (24-sep, one sample) | 0.52 s | |
+| host load average (1/5/15 min) | 0.24 / 0.23 / 0.19 | 0.47 (1 min) |
+| host CPU (vmstat, 5 s samples) | us 2–10 %, idle 82–92 %, steal 0 | us 4, sy 2, guest 8, idle 87 %, steal 0 (60 s) |
+| host memory used / available | 7.6 GB / 8.1 GB | available 4.57 GB (4.64 at boot +25 min: flat); swap 56 KB, si/so 0, OOM 0 |
+| RSS per emulator, qemu, after 10.7 h (chaparral / quibdo) | 3.42 GB / 3.71 GB | 3.53 / 3.62 GB; general-santos 3.36 GB (unchanged since +25 min) |
+| busiest emulator (top) | 10 % of a vCPU | not measured |
+| adb shell round trip, p50 of 5 (chaparral / quibdo) | 13 ms / 14 ms | not measured |
+| full GMS dumpsys (chaparral / quibdo) | 0.20 s / 0.12 s | not measured |
+| certifier probe, monitor → gateway → push → monitor, 24 h (n=10) | p50 0.67 s, p95 0.76 s | 12:00–20:00Z, 8 sent: 6 at 0.59–0.74 s (p50 0.66 s); 1 at 23.2 s and 1 lost, both the certifier's own push socket (below), not the host |
+| real alert, listener → monitor corrected (24-sep, one sample) | 0.52 s | no real alert yet |
 
 What would say the canaries hurt Colombia: steal > 0 or idle < 50 % in steady state, an adb round
 trip over ~50 ms, a GMS dump over 1 s, or a real alert's listener → monitor over the certifier's 2 s
 rule (which then turns the day DEGRADED on its own). Boot is the known weak point: 2 vCPU cannot boot
 2 emulators at once (STATUS, known traps), so the canaries must boot one at a time, never alongside
 a Colombia receptor.
+
+After (25-sep): 3 emulators are steady on the r8i.large. Idle is 87 %, steal is 0, memory stayed flat
+from +25 min to 8 h, and no alarm input fired (AEA_NOT_OK and NUDGE_FAILED were 0). A 4th emulator would
+leave about 1 GB, so glan still waits for its own host (QA-93). Two probes were off, and both were the
+certifier's receiver, not the host. At 13:25 its autopush socket had gone deaf and was not noticed until
+TCP gave up at 13:41, so the probe outlived its 60 s TTL. At 14:39 the socket went deaf seconds before
+autopush's ~20 min cut, and the push came on the reconnect, 23 s late. Fixed in push-receiver.mjs: the
+receiver reconnects after one unanswered ping, and on its own schedule every 15 min.

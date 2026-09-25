@@ -260,6 +260,8 @@ Impact on the backend when the app arrives: per-sensor delivery must also be abl
 - Latency is similar to Web Push, because both travel over APNs. The advantage of the app is loudness and following the user, not speed.
 - Risk that remains: App Store review (5.2.2).
 
+
+**Update 2026-09-25 (research, docs/research/ios-techniques.md §1):** AlarmKit is no longer the main goal. Apple documents no way to start an AlarmKit alarm from a push; only an unproven NSE path exists (device test T1). Plan: ship with a time-sensitive alert push, request the Critical Alerts entitlement now (the only documented way to bypass the silent switch and Focus from a push), and keep AlarmKit as an experiment.
 ## 9. Next step, after stabilizing: distill and optimize to the extreme
 
 **Not done now.** It starts when the backend and the receptors are stable and proven in production.
