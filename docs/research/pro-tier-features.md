@@ -9,6 +9,15 @@ framed as supporting development and paying for real product features, not as a 
 Tags: **[V]** read/fetched directly this session. **[R]** reported by a secondary source, not
 re-derived. **[U]** unverified or my judgment. Not legal advice.
 
+**Correction (2026-09-26, after coordinator review):** "multi-location tracking" below means
+one thing only: watching a **saved place you are not currently at** (checking on a family
+member's city while you're abroad). It is not, and must never be described as, "the app knows
+where you are" — that's live coverage following the phone's real GPS position as it moves
+(RelayCore's SubscriptionEngine/ReceptorChooser), which is core, already built, free, and not
+part of this evaluation. The free live-tracking behavior is the headline pitch ("wherever you
+are right now, you're covered"). The diaspora finding below (§2) is about the paid, saved-place,
+not-currently-there case only, and stays a backlog nice-to-have, not the core sell.
+
 ## Recommendation
 
 1. **This framing does not have the risk the donation framing had.** "Pay for a Pro tier that
@@ -21,8 +30,11 @@ re-derived. **[U]** unverified or my judgment. Not legal advice.
    here is lower than a directly-sourced local finding, since it's an absence-of-objection
    argument, not a positive confirmation from local sources — tagging the overall claim [U],
    but a low-risk one.
-2. **Multi-location tracking is the one feature with real, sourced, locally-differentiated
-   pull, and it is strongest in Mexico, Turkey and the Philippines.** All three have large
+2. **Multi-location tracking — a saved place you are not currently at, not your own live
+   position — is the one Pro feature with real, sourced, locally-differentiated pull, and it is
+   strongest in Mexico, Turkey and the Philippines.** This is a backlog nice-to-have, not the
+   core sell: the core, free, already-built pitch is that coverage follows the phone's real
+   live position as it moves. All three have large
    populations living abroad who send money home and stay attached to home-country news:
    Mexico's diaspora is about 11.6 million [R], Turkey's is about 7.5 million (3 million in
    Germany alone) [R], and the Philippines' economy runs on this pattern explicitly —
@@ -71,7 +83,8 @@ question the way donation framing was.
 
 ## 2. What non-safety features would feel worth paying for
 
-- **Multi-location tracking, tied to diaspora size**: see Recommendation §2. Numbers, all [R]:
+- **Multi-location tracking (saved place, not current position), tied to diaspora size**: see
+  Recommendation §2 and the correction at the top of this doc. Numbers, all [R]:
 
   | market | population abroad | what it means for this feature |
   |---|---|---|
