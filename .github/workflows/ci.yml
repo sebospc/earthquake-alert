@@ -33,6 +33,7 @@ jobs:
           bash infra/deploy/test_ci_run_to_deploy.sh
           bash infra/new-account/test_backup.sh
           bash infra/new-account/test_rebuild.sh
+          bash infra/backup/test_backup_restore.sh
       - name: cloudformation templates
         run: |
           pip install --quiet cfn-lint

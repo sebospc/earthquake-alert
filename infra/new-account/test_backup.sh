@@ -17,6 +17,8 @@ echo "AEA_ORIGIN_SECRET=dummy" > "$WORK/root/etc/caddy/origin.env"
 echo '{"subscriptions":[]}' > "$WORK/root/var/lib/earthquake-gateway/subscriptions.json"
 cat > "$WORK/bin/ssh" <<FAKE
 #!/bin/sh
+for arg; do last=\$arg; done
+echo "\$last" > "$WORK/ssh-command"
 cd "$WORK/root" && tar -czf - etc var
 FAKE
 chmod +x "$WORK/bin/ssh"
@@ -53,3 +55,15 @@ printf 'X' | dd of="$WORK/corrupt.enc" bs=1 seek=200 conv=notrunc 2>/dev/null
 open_with "${openssls[0]}" "$WORK/corrupt.enc" >/dev/null 2>&1 && fail "a corrupted backup opened"
 AEA_BACKUP_PASS="wrong passphrase!!" open_with "${openssls[0]}" "$archive" >/dev/null 2>&1 && fail "wrong passphrase opened"
 echo "PASS truncated, corrupted and wrong-passphrase backups fail"
+
+# The APNs key is downloadable once: the host's tar must ask for it, and a backup whose env names
+# a key it does not hold must fail.
+[[ $(cat "$WORK/ssh-command") == *" etc/earthquake-gateway/*.p8 "* ]] || fail "the host tar does not ask for the APNs key"
+echo "APNS_PRIVATE_KEY_FILE=/etc/earthquake-gateway/AuthKey_ABC123DEFG.p8" >> "$WORK/root/etc/earthquake-gateway.env"
+output=$(PATH="$WORK/bin:$PATH" bash "$HERE/backup.sh" 10.0.0.1 "$WORK/out-nokey" 2>&1) && fail "a backup without the APNs key passed"
+[[ $output == *"BACKUP_FAILED: etc/earthquake-gateway/AuthKey_ABC123DEFG.p8 missing"* && -z $(ls "$WORK/out-nokey") ]] \
+  || fail "missing APNs key not reported, or the archive was kept: $output"
+mkdir -p "$WORK/root/etc/earthquake-gateway"
+echo "dummy key" > "$WORK/root/etc/earthquake-gateway/AuthKey_ABC123DEFG.p8"
+output=$(PATH="$WORK/bin:$PATH" bash "$HERE/backup.sh" 10.0.0.1 "$WORK/out-key" 2>&1) || fail "backup with the APNs key: $output"
+echo "PASS the host tar asks for the APNs key, and a backup without the key the env names fails"

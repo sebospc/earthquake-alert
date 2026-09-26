@@ -26,15 +26,17 @@ if [[ -z ${BACKUP_BUCKET:-} || -z ${METRIC_HOST:-} ]]; then
 fi
 
 name=aea-backup-$(date -u +%Y%m%dT%H%M%SZ).tar.gz.enc
-(cd "$ROOT_DIR" && tar -czpf - --ignore-failed-read etc/earthquake-gateway.env etc/earthquake-sensors.map \
-    etc/caddy/origin.env var/lib/earthquake-gateway/*.json*) \
+(cd "$ROOT_DIR" && shopt -s nullglob && tar -czpf - --ignore-failed-read etc/earthquake-gateway.env etc/earthquake-sensors.map \
+    etc/caddy/origin.env etc/earthquake-gateway/*.p8 var/lib/earthquake-gateway/*.json*) \
   | python3 "$TOOLS_DIR/envelope.py" pack \
   | openssl enc "${CIPHER[@]}" -salt -pass "file:$PASS_FILE" -out "$work/$name"
 
 # Upload only what opens and holds what cannot be regenerated: the secrets, the map, the users.
-contents=$(openssl enc -d "${CIPHER[@]}" -pass "file:$PASS_FILE" -in "$work/$name" \
-  | python3 "$TOOLS_DIR/envelope.py" open | tar -tzf -)
-for required in etc/earthquake-gateway.env etc/earthquake-sensors.map var/lib/earthquake-gateway/subscriptions.json; do
+open_backup() { openssl enc -d "${CIPHER[@]}" -pass "file:$PASS_FILE" -in "$work/$name" | python3 "$TOOLS_DIR/envelope.py" open; }
+contents=$(open_backup | tar -tzf -)
+# The APNs key is downloadable once: a host rebuilt with the key id but no key reaches no iPhone.
+apns_key=$(open_backup | tar -xzOf - etc/earthquake-gateway.env | sed -n "s|^APNS_PRIVATE_KEY_FILE=[\"']*/*\([^\"']*\).*|\1|p")
+for required in etc/earthquake-gateway.env etc/earthquake-sensors.map var/lib/earthquake-gateway/subscriptions.json $apns_key; do
   [[ $'\n'$contents$'\n' == *$'\n'"$required"$'\n'* ]] || { echo "GATEWAY_BACKUP_FAILED: $required missing" >&2; exit 1; }
 done
 

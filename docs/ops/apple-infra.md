@@ -22,10 +22,10 @@ Use the APNs auth key (.p8, token-based). Do not use the older .p12 push certifi
   same time. Create the new key, switch the gateway env and restart, check with the test button,
   then revoke the old key. Revoking first means an outage.
 
-The hourly backup (`infra/backup/`) and `backup.sh` copy `/etc/earthquake-gateway.env` but not
-the `.p8` file. Add `etc/earthquake-gateway/AuthKey_*.p8` to both file lists before the switch,
-or a rebuilt host comes back with the right Key ID and no key, and every iPhone gets nothing.
-It is on the checklist below.
+Both backups (`infra/backup/` hourly and `backup.sh`) copy `etc/earthquake-gateway/*.p8`. If the
+gateway env names a key file (`APNS_PRIVATE_KEY_FILE`) and the backup does not hold it, the backup
+fails loudly, so keep the key in `/etc/earthquake-gateway/`. Without that, a rebuilt host would
+come back with the right Key ID and no key, and no iPhone would get anything.
 
 ### CI does not sign anything
 
@@ -106,9 +106,8 @@ Before the first push to a real phone:
 1. Account, bundle id, team id, App IDs, app group: `ios-client/TESTFLIGHT.md` steps 1-4.
 2. Create the APNs key. Put the `.p8` in the password manager first, then on the host
    (`gateway/README.md` "Real APNs"). Do not set `APNS_DRY_RUN=0` yet.
-3. devops: add `etc/earthquake-gateway/AuthKey_*.p8` to the file lists of `backup.sh` and
-   `gateway-state-backup.sh`, with its test. Deploy it and check that the next hourly backup lists
-   the file.
+3. Check that the next hourly backup lists `etc/earthquake-gateway/AuthKey_<KEY_ID>.p8`. It fails
+   if the env names a key it cannot find.
 4. developer-qa: the certifier's scheduled test push to an opted-in phone is running (above).
 5. Gateway env switch and restart. `/status` shows `"apns_dry_run": false`.
 6. Test button from a real phone (sandbox build from Xcode). `receptor-uncovered` stays OK. The

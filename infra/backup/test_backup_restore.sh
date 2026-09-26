@@ -93,3 +93,24 @@ rm -rf "$WORK/bucket/gateway-state"/*
 output=$(bash "$HERE/fetch-latest.sh" "$WORK/fetched" 2>&1) && fail "an empty bucket fetched something"
 [[ $output == *"no backup in s3://fake-bucket/gateway-state/"* ]] || fail "empty bucket not reported: $output"
 echo "PASS corrupted object and empty bucket fail loudly"
+
+# The APNs key is downloadable once: once the env points at it, it must be in every backup.
+env_file=$root/etc/earthquake-gateway.env
+mkdir -p "$root/etc/earthquake-gateway"
+echo "-----BEGIN PRIVATE KEY----- dummy" > "$root/etc/earthquake-gateway/AuthKey_ABC123DEFG.p8"
+echo 'APNS_PRIVATE_KEY_FILE="/etc/earthquake-gateway/AuthKey_ABC123DEFG.p8"' >> "$env_file"
+output=$(backup) || fail "backup with the APNs key: $output"
+newest=$(ls "$WORK/bucket/gateway-state" | sort | tail -1)
+key_back=$(openssl enc -d -aes-256-cbc -md sha256 -pbkdf2 -iter 600000 -pass "file:$PASS_FILE" -in "$WORK/bucket/gateway-state/$newest" \
+  | python3 "$HERE/../new-account/envelope.py" open | tar -xzOf - etc/earthquake-gateway/AuthKey_ABC123DEFG.p8) \
+  || fail "the APNs key is not in the backup"
+[[ $key_back == "-----BEGIN PRIVATE KEY----- dummy" ]] || fail "the APNs key came back wrong"
+sed -i.bak 's|^APNS_PRIVATE_KEY_FILE=.*|APNS_PRIVATE_KEY_FILE=/home/ubuntu/AuthKey_ABC123DEFG.p8|' "$env_file"
+output=$(backup) && fail "a key outside /etc/earthquake-gateway/ passed"
+[[ $output == *"GATEWAY_BACKUP_FAILED: home/ubuntu/AuthKey_ABC123DEFG.p8 missing"* ]] || fail "key outside not reported: $output"
+sed -i.bak 's|^APNS_PRIVATE_KEY_FILE=.*|APNS_PRIVATE_KEY_FILE=/etc/earthquake-gateway/AuthKey_ABC123DEFG.p8|' "$env_file"
+rm "$root/etc/earthquake-gateway/AuthKey_ABC123DEFG.p8"
+output=$(backup) && fail "a backup without the key the env names passed"
+[[ $output == *"AuthKey_ABC123DEFG.p8 missing"* ]] || fail "missing key not reported: $output"
+[[ $(metric_count) == 3 ]] || fail "a backup without the APNs key sent GatewayBackupOk"
+echo "PASS the APNs key the env names is backed up, and a backup without it fails"

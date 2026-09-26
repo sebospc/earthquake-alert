@@ -6,7 +6,8 @@
 #   - /var/lib/earthquake-gateway/*.json and *.jsonl: subscriptions, devices, coverage state,
 #     heartbeats, evidence;
 #   - /etc/earthquake-sensors.map: which emulator is which receptor, with its key;
-#   - /etc/caddy/origin.env: the CloudFront origin secret.
+#   - /etc/caddy/origin.env: the CloudFront origin secret;
+#   - /etc/earthquake-gateway/*.p8: the APNs key (Apple lets you download it once).
 #
 #   infra/new-account/backup.sh <old host ip> [out dir]
 # The passphrase is asked for (not echoed), or taken from AEA_BACKUP_PASS; never from a command
@@ -35,14 +36,17 @@ umask 077
 trap 'rm -f "$out"' ERR
 # tar on the host streams straight into the cipher here: no plaintext copy on either disk.
 ssh -i "$SSH_KEY" -o BatchMode=yes "ubuntu@$host" \
-  "sudo sh -c 'cd / && tar -czpf - --ignore-failed-read etc/earthquake-gateway.env etc/earthquake-sensors.map etc/caddy/origin.env var/lib/earthquake-gateway/*.json*'" \
+  "sudo sh -c 'cd / && tar -czpf - --ignore-failed-read etc/earthquake-gateway.env etc/earthquake-sensors.map etc/caddy/origin.env etc/earthquake-gateway/*.p8 var/lib/earthquake-gateway/*.json*'" \
   | python3 "$HERE/envelope.py" pack \
   | openssl enc "${CIPHER[@]}" -salt -pass env:AEA_BACKUP_PASS -out "$out"
 
-# Prove it opens and holds the two things that cannot be regenerated.
-contents=$(openssl enc -d "${CIPHER[@]}" -pass env:AEA_BACKUP_PASS -in "$out" | python3 "$HERE/envelope.py" open | tar -tzf -) \
+# Prove it opens and holds what cannot be regenerated.
+open_backup() { openssl enc -d "${CIPHER[@]}" -pass env:AEA_BACKUP_PASS -in "$out" | python3 "$HERE/envelope.py" open; }
+contents=$(open_backup | tar -tzf -) \
   || { echo "BACKUP_FAILED: the new archive does not open" >&2; rm -f "$out"; exit 1; }
-for required in etc/earthquake-gateway.env etc/earthquake-sensors.map; do
+# The APNs key is downloadable once: a host rebuilt with the key id but no key reaches no iPhone.
+apns_key=$(open_backup | tar -xzOf - etc/earthquake-gateway.env | sed -n "s|^APNS_PRIVATE_KEY_FILE=[\"']*/*\([^\"']*\).*|\1|p")
+for required in etc/earthquake-gateway.env etc/earthquake-sensors.map $apns_key; do
   [[ $'\n'$contents$'\n' == *$'\n'"$required"$'\n'* ]] || { echo "BACKUP_FAILED: $required missing" >&2; rm -f "$out"; exit 1; }
 done
 echo "BACKUP_OK $out ($(wc -l <<<"$contents" | tr -d ' ') files)"
