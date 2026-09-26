@@ -519,3 +519,44 @@ try:
 except RuntimeError:
     pass
 print("PASS an instance the AWS CLI cannot describe fails the location poll instead of skipping it")
+
+
+# ntfy: topic from data/ntfy.json (never code), level per notice, failures land in live-alerts.jsonl.
+import json  # noqa: E402
+import urllib.request as _request  # noqa: E402
+_sent, _local = [], []
+monitor.append = lambda name, record: _local.append(record)
+monitor.subprocess.run = lambda *args, **kwargs: None
+class _Response:
+    def close(self): pass
+_request.urlopen = lambda request, timeout: (_sent.append(request), _Response())[1]
+_dir = tempfile.mkdtemp()
+monitor.DATA = _dir
+os.environ.pop("MONITOR_NTFY_TOPIC", None)
+monitor.notify("FAIL chaparral: uncovered for 60 min")
+assert _sent == [], "ntfy sent without a configured topic"
+with open(os.path.join(_dir, "ntfy.json"), "w") as handle:
+    json.dump({"topic": "quake-secret_123"}, handle)
+for text, priority, title in (("RESTORED quibdo: covered again after 20 min", "default", "Certifier: RESTORED"),
+                              ("DEGRADED quibdo: uncovered for 15 min", "high", "Certifier: DEGRADED"),
+                              ("FAIL quibdo: uncovered for 60 min", "urgent", "Certifier: FAIL"),
+                              ("certificate 2026-09-25: FAIL, see docs", "urgent", "Certifier: FAIL")):
+    _sent.clear()
+    monitor.notify(text)
+    assert _sent[0].full_url == "https://ntfy.sh/quake-secret_123", _sent[0].full_url
+    assert (_sent[0].get_header("Priority"), _sent[0].get_header("Title")) == (priority, title), text
+with open(os.path.join(_dir, "ntfy.json"), "w") as handle:
+    json.dump({"topic": "../evil?x=1"}, handle)
+_sent.clear(); _local.clear()
+monitor.notify("FAIL quibdo: uncovered for 60 min")
+assert _sent == [] and any("ntfy failed" in r["message"] for r in _local), "a bad topic was sent or failed silently"
+_request.urlopen = lambda request, timeout: (_ for _ in ()).throw(OSError("offline"))
+with open(os.path.join(_dir, "ntfy.json"), "w") as handle:
+    json.dump({"topic": "quake-secret_123"}, handle)
+_local.clear()
+monitor.notify("FAIL quibdo: uncovered for 60 min")
+assert any("ntfy failed: offline" in r["message"] for r in _local), "an ntfy outage left no local record"
+os.environ["MONITOR_NTFY_TOPIC"] = "from-env"
+assert monitor.ntfy_topic() == "from-env", "MONITOR_NTFY_TOPIC no longer overrides the file"
+os.environ.pop("MONITOR_NTFY_TOPIC")
+print("PASS ntfy topic from data/ntfy.json, level per notice, bad topic and outage recorded locally")

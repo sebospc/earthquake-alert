@@ -38,7 +38,6 @@ REGION = os.environ.get("MONITOR_REGION", "sa-east-1")
 SSH_KEY = os.path.expanduser(os.environ.get("MONITOR_SSH_KEY", "~/.ssh/aea-lab.pem"))
 LOCAL_PORT = int(os.environ.get("MONITOR_LOCAL_PORT", "18787"))
 GATEWAY = f"http://127.0.0.1:{LOCAL_PORT}"
-NTFY_TOPIC = os.environ.get("MONITOR_NTFY_TOPIC")
 # The Mac control fleet: lab.py runs from here, live. Read-only.
 # The user retired the Mac control fleet (launchd job removed, emulators off). After this the
 # SGC and USGS catalogs are the only ground truth, and the Mac is "retired", never "down".
@@ -88,6 +87,24 @@ def load_state():
                                           "notified": [], "last": {}})
 
 
+NTFY_TOPIC_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,64}")
+# Live coverage notices (verify.live_coverage_notices) start with their verdict; anything else is FAIL.
+NTFY_LEVELS = {"RESTORED": ("default", "RESTORED"), "DEGRADED": ("high", "DEGRADED"), "FAIL": ("urgent", "FAIL")}
+
+
+def ntfy_topic():
+    """The topic lives in data/ntfy.json ({"topic": "..."}, outside git) or MONITOR_NTFY_TOPIC. An ntfy
+    topic is readable by anyone who knows it, so it is never in the code. None = ntfy off."""
+    topic = os.environ.get("MONITOR_NTFY_TOPIC")
+    if not topic and os.path.exists(path("ntfy.json")):
+        topic = lab.load(path("ntfy.json"), {}).get("topic")
+    if not topic:
+        return None
+    if not NTFY_TOPIC_PATTERN.fullmatch(topic):
+        raise ValueError("ntfy topic must be 1-64 letters, digits, - or _")
+    return topic
+
+
 def notify(message):
     """Operator alert: FAIL, and live coverage runs of 15 min or more. Local first (a macOS
     notification and data/live-alerts.jsonl, nothing leaves the machine); ntfy only if configured."""
@@ -98,14 +115,17 @@ def notify(message):
                        capture_output=True, timeout=10)
     except (OSError, subprocess.TimeoutExpired):
         pass  # the log line and live-alerts.jsonl above already hold it
-    if not NTFY_TOPIC:
-        return
     try:
-        request = urllib.request.Request(f"https://ntfy.sh/{NTFY_TOPIC}", data=message.encode(),
-                                         headers={"Title": "Certifier: FAIL", "Priority": "urgent"})
+        topic = ntfy_topic()
+        if not topic:
+            return
+        priority, level = NTFY_LEVELS.get(message.split(" ", 1)[0], NTFY_LEVELS["FAIL"])
+        request = urllib.request.Request(f"https://ntfy.sh/{topic}", data=message.encode(),
+                                         headers={"Title": f"Certifier: {level}", "Priority": priority})
         urllib.request.urlopen(request, timeout=15).close()
     except Exception as error:
         print(f"ntfy failed: {error}", file=sys.stderr)
+        append("live-alerts.jsonl", {"at": now(), "message": f"ntfy failed: {error}"})
 
 
 # --- the tunnel: the gateway is only on the EC2's loopback, and the IP changes with spot ---

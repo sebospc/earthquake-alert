@@ -65,7 +65,7 @@ corrected, goes over 2 s (or never reaches the monitor) is DEGRADED too. The cla
   already travels over web push to any user (alerts and coverage notices), end-to-end
   encrypted with the keys in `data/push-state.json`. Mozilla sees when a push arrives,
   not the content.
-- **ntfy.sh**: only if `MONITOR_NTFY_TOPIC` exists, and only for FAIL.
+- **ntfy.sh**: only if a topic is configured: `data/ntfy.json` (`{"topic": "..."}`, outside git, 0600) or `MONITOR_NTFY_TOPIC`. Anyone who knows a topic can read it, so pick a long random one. Every operator notice goes there with its own level: RESTORED default, DEGRADED high, FAIL urgent (the live uncovered-receptor notices at 15 and 60 min, the certificate FAIL, receiver failures). A send failure or a bad topic is written to `data/live-alerts.jsonl` and stderr, never silent. Off until the user creates the file.
 - **AWS**: `describe-instances` for the IP (it changes with every spot interruption) and SSH for the
   tunnel. It writes nothing on the EC2.
 
