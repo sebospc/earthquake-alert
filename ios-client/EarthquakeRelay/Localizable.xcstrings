@@ -10,7 +10,7 @@
         "en": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Sismo M%@ cerca de su zona. Protéjase ahora."
+            "value": "M%@ earthquake near your area. Drop, Cover, and Hold On."
           }
         },
         "es": {
@@ -19,10 +19,22 @@
             "value": "Sismo M%@ cerca de su zona. Protéjase ahora."
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sismo M%@ cerca de su zona. Agáchate, Cúbrete y Afírmate."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Sismo M%@ cerca de su zona. Protéjase ahora."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Bölgenize yakın M%@ deprem. Çök, Kapan, Tutun."
           }
         }
       }
@@ -33,7 +45,7 @@
         "en": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Posible sismo cerca de su zona. Protéjase ahora."
+            "value": "Possible earthquake near your area. Drop, Cover, and Hold On."
           }
         },
         "es": {
@@ -42,10 +54,22 @@
             "value": "Posible sismo cerca de su zona. Protéjase ahora."
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Posible sismo cerca de su zona. Agáchate, Cúbrete y Afírmate."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Posible sismo cerca de su zona. Protéjase ahora."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Bölgenize yakın olası deprem. Çök, Kapan, Tutun."
           }
         }
       }
@@ -65,10 +89,22 @@
             "value": "Alerta de sismo"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alerta de sismo"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Alerta de terremoto"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Deprem uyarısı"
           }
         }
       }
@@ -81,10 +117,22 @@
             "value": "Open Settings"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir Ajustes"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Abrir Ajustes"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Ayarları Aç"
           }
         }
       }
@@ -100,10 +148,22 @@
             "value": "Turn On"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activar"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Ativar"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Etkinleştir"
           }
         }
       }
@@ -116,10 +176,22 @@
             "value": "Turn On Alerts"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activar alertas"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Ativar alertas"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Uyarıları Aç"
           }
         }
       }
@@ -132,10 +204,22 @@
             "value": "Active"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activo"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Ativo"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Etkin"
           }
         }
       }
@@ -148,10 +232,22 @@
             "value": "We can't alert you right now. We're fixing it."
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ahora mismo no podemos avisarle. Lo estamos arreglando."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "No momento não podemos avisar você. Estamos resolvendo."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Şu anda sizi uyaramıyoruz. Sorunu gideriyoruz."
           }
         }
       }
@@ -164,10 +260,22 @@
             "value": "We can't alert you right now. Check your internet connection."
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ahora mismo no podemos avisarle. Revise su conexión a internet."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "No momento não podemos avisar você. Verifique sua conexão com a internet."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Şu anda sizi uyaramıyoruz. İnternet bağlantınızı kontrol edin."
           }
         }
       }
@@ -180,10 +288,22 @@
             "value": "Test Alert"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alerta de prueba"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Alerta de teste"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Test Uyarısı"
           }
         }
       }
@@ -196,10 +316,22 @@
             "value": "Earthquake Alert"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alerta de sismo"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Alerta de terremoto"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Deprem Uyarısı"
           }
         }
       }
@@ -212,10 +344,22 @@
             "value": "Alerts On"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alertas activas"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Alertas ativos"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Uyarılar Açık"
           }
         }
       }
@@ -228,10 +372,22 @@
             "value": "Earthquake Alerts"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alertas de sismo"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Alertas de terremoto"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Deprem Uyarıları"
           }
         }
       }
@@ -244,10 +400,22 @@
             "value": "Alerts Off"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alertas desactivadas"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Alertas desativados"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Uyarılar Kapalı"
           }
         }
       }
@@ -263,10 +431,22 @@
             "value": "Late Notice"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aviso atrasado"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Aviso atrasado"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Gecikmiş Bildirim"
           }
         }
       }
@@ -292,10 +472,22 @@
             "value": "Las alertas de su zona vuelven a funcionar."
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las alertas de su zona vuelven a funcionar."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Os alertas da sua região voltaram a funcionar."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Bölgenizdeki uyarılar tekrar çalışıyor."
           }
         }
       }
@@ -315,10 +507,22 @@
             "value": "Cobertura restablecida"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cobertura restablecida"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Cobertura restabelecida"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Kapsama alanı yeniden aktif"
           }
         }
       }
@@ -331,10 +535,22 @@
             "value": "Close"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cerrar"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Fechar"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Kapat"
           }
         }
       }
@@ -347,10 +563,22 @@
             "value": "Coverage"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cobertura"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Cobertura"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Kapsama"
           }
         }
       }
@@ -363,10 +591,22 @@
             "value": "Full coverage"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cobertura completa"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Cobertura completa"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Tam kapsama"
           }
         }
       }
@@ -379,10 +619,22 @@
             "value": "Limited coverage: we'll only alert you about strong earthquakes."
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cobertura limitada: solo le avisaremos de sismos fuertes."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Cobertura limitada: só avisaremos sobre terremotos fortes."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sınırlı kapsama: yalnızca güçlü depremlerde sizi uyarırız."
           }
         }
       }
@@ -395,10 +647,22 @@
             "value": "Partial coverage: some small earthquakes may not trigger an alert."
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cobertura parcial: algunos sismos pequeños podrían no avisarse."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Cobertura parcial: alguns terremotos pequenos podem não ser avisados."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Kısmi kapsama: bazı küçük depremler için uyarı gelmeyebilir."
           }
         }
       }
@@ -411,10 +675,22 @@
             "value": "With a Focus on, the alert may arrive silently."
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Con Concentración activa, el aviso puede llegar en silencio."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Com um Foco ativado, o aviso pode chegar em silêncio."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Bir Odak açıkken uyarı sessiz gelebilir."
           }
         }
       }
@@ -430,10 +706,22 @@
             "value": "Sent. It should sound in a few seconds."
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enviada. Debería sonar en unos segundos."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Enviado. Deve tocar em alguns segundos."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Gönderildi. Birkaç saniye içinde çalmalı."
           }
         }
       }
@@ -446,10 +734,22 @@
             "value": "Sending…"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enviando…"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Enviando…"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Gönderiliyor…"
           }
         }
       }
@@ -462,10 +762,22 @@
             "value": "Wait a few minutes to try again."
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Espere unos minutos para probar de nuevo."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Aguarde alguns minutos para testar de novo."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Tekrar denemek için birkaç dakika bekleyin."
           }
         }
       }
@@ -481,10 +793,22 @@
             "value": "Location Needed"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Falta su ubicación"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Falta sua localização"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Konum Gerekli"
           }
         }
       }
@@ -495,10 +819,16 @@
         "en": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "El sismo ocurrió hace %@ min. Ya no es un aviso anticipado."
+            "value": "The earthquake happened %@ min ago. This is no longer an early warning."
           }
         },
         "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El sismo ocurrió hace %@ min. Ya no es un aviso anticipado."
+          }
+        },
+        "es-CL": {
           "stringUnit": {
             "state": "translated",
             "value": "El sismo ocurrió hace %@ min. Ya no es un aviso anticipado."
@@ -508,6 +838,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "El sismo ocurrió hace %@ min. Ya no es un aviso anticipado."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Deprem %@ dakika önce oldu. Artık erken uyarı değildir."
           }
         }
       }
@@ -527,10 +863,22 @@
             "value": "Aviso de sismo atrasado"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aviso de sismo atrasado"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Aviso de terremoto atrasado"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Gecikmiş deprem bildirimi"
           }
         }
       }
@@ -543,10 +891,22 @@
             "value": "We use it to choose nearby sensors. Your exact position never leaves the phone."
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La usamos para elegir los sensores cercanos. Su posición exacta no sale del teléfono."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Nós a usamos para escolher os sensores próximos. Sua posição exata não sai do telefone."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Yakındaki sensörleri seçmek için kullanırız. Tam konumunuz telefondan çıkmaz."
           }
         }
       }
@@ -559,10 +919,22 @@
             "value": "Alerts May Not Sound"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las alertas pueden no sonar"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Os alertas podem não tocar"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Uyarılar Çalmayabilir"
           }
         }
       }
@@ -575,10 +947,22 @@
             "value": "We alert you when an earthquake is detected near you."
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le avisamos cuando se detecta un sismo cerca de usted."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Avisamos você quando um terremoto é detectado perto de você."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Yakınınızda bir deprem algılandığında sizi uyarırız."
           }
         }
       }
@@ -591,10 +975,22 @@
             "value": "We send you a test alert so you can hear how it sounds."
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le enviamos una alerta de prueba para que escuche cómo suena."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Enviamos um alerta de teste para você ouvir como ele soa."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Nasıl çaldığını duymanız için size bir test uyarısı göndeririz."
           }
         }
       }
@@ -607,10 +1003,22 @@
             "value": "It arrived. This is how an alert will sound."
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Llegó. Así sonará una alerta."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Chegou. É assim que um alerta vai tocar."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Ulaştı. Bir uyarı böyle çalacak."
           }
         }
       }
@@ -623,10 +1031,22 @@
             "value": "Shows the sensors that cover you"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Muestra los sensores que lo cubren"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Mostra os sensores que cobrem você"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sizi kapsayan sensörleri gösterir"
           }
         }
       }
@@ -646,10 +1066,22 @@
             "value": "Su zona todavía no tiene cobertura."
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Su zona todavía no tiene cobertura."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Sua região ainda não tem cobertura."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Bölgenizde henüz kapsama alanı yok."
           }
         }
       }
@@ -669,10 +1101,22 @@
             "value": "Sin cobertura en su zona"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin cobertura en su zona"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Sem cobertura na sua região"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Bölgenizde kapsama yok"
           }
         }
       }
@@ -685,10 +1129,22 @@
             "value": "No sensor nearby yet."
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ningún sensor cerca por ahora."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Nenhum sensor por perto por enquanto."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Şimdilik yakında sensör yok."
           }
         }
       }
@@ -701,10 +1157,22 @@
             "value": "It didn't arrive. Check that notifications are on."
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No llegó. Revise que las notificaciones estén activadas."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Não chegou. Verifique se as notificações estão ativadas."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Ulaşmadı. Bildirimlerin açık olduğunu kontrol edin."
           }
         }
       }
@@ -717,10 +1185,22 @@
             "value": "Couldn't send. Check your internet connection."
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo enviar. Revise su conexión a internet."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Não foi possível enviar. Verifique sua conexão com a internet."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Gönderilemedi. İnternet bağlantınızı kontrol edin."
           }
         }
       }
@@ -736,10 +1216,22 @@
             "value": "Allow notifications so the alert reaches you instantly."
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permita las notificaciones para que la alerta le llegue al instante."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Permita as notificações para que o alerta chegue na hora."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Uyarının size anında ulaşması için bildirimlere izin verin."
           }
         }
       }
@@ -752,10 +1244,22 @@
             "value": "Send Test Alert"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Probar alerta"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Enviar alerta de teste"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Test Uyarısı Gönder"
           }
         }
       }
@@ -768,10 +1272,22 @@
             "value": "Received %@"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recibida %@"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Recebido %@"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Alındı: %@"
           }
         }
       }
@@ -784,10 +1300,22 @@
             "value": "Retrying. Until then you won't get alerts."
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reintentando. Mientras tanto no recibirá alertas."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Tentando de novo. Enquanto isso você não receberá alertas."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Yeniden deneniyor. Bu sırada uyarı almayacaksınız."
           }
         }
       }
@@ -810,10 +1338,22 @@
             "value": "Ahora mismo no podemos avisarle."
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ahora mismo no podemos avisarle."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "No momento não podemos avisar você."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Şu anda sizi uyaramıyoruz."
           }
         }
       }
@@ -833,10 +1373,22 @@
             "value": "Servicio interrumpido"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Servicio interrumpido"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Serviço interrompido"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Hizmet kesintide"
           }
         }
       }
@@ -849,10 +1401,22 @@
             "value": "Sensors covering you"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sensores que lo cubren"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Sensores que cobrem você"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sizi kapsayan sensörler"
           }
         }
       }
@@ -865,10 +1429,22 @@
             "value": "Service Interrupted"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Servicio interrumpido"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Serviço interrompido"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Hizmet Kesintide"
           }
         }
       }
@@ -881,10 +1457,22 @@
             "value": "Service interrupted: we can't alert you right now."
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Servicio interrumpido: ahora mismo no podemos avisarle."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Serviço interrompido: no momento não podemos avisar você."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Hizmet kesintide: şu anda sizi uyaramıyoruz."
           }
         }
       }
@@ -897,10 +1485,22 @@
             "value": "No Coverage Yet"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin cobertura aún"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Sem cobertura ainda"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Henüz Kapsama Yok"
           }
         }
       }
@@ -913,10 +1513,22 @@
             "value": "No Connection to the Server"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin conexión con el servidor"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Sem conexão com o servidor"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sunucuyla Bağlantı Yok"
           }
         }
       }
@@ -929,10 +1541,22 @@
             "value": "No data"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin datos"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Sem dados"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Veri yok"
           }
         }
       }
@@ -945,10 +1569,22 @@
             "value": "Without permission we can't alert you."
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin permiso no podemos avisarle."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Sem permissão não podemos avisar você."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "İzin olmadan sizi uyaramayız."
           }
         }
       }
@@ -961,10 +1597,22 @@
             "value": "No signal"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin señal"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Sem sinal"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sinyal yok"
           }
         }
       }
@@ -977,10 +1625,22 @@
             "value": "Your exact position never leaves the phone."
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Su posición exacta no sale del teléfono."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Sua posição exata não sai do telefone."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Tam konumunuz telefondan çıkmaz."
           }
         }
       }
@@ -993,10 +1653,22 @@
             "value": "Your phone isn't registered yet. Retrying."
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Su teléfono aún no está registrado. Reintentando."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Seu telefone ainda não está registrado. Tentando de novo."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Telefonunuz henüz kayıtlı değil. Yeniden deneniyor."
           }
         }
       }
@@ -1009,10 +1681,22 @@
             "value": "Your area has no coverage yet."
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Su zona todavía no tiene cobertura."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Sua região ainda não tem cobertura."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Bölgenizde henüz kapsama alanı yok."
           }
         }
       }
@@ -1032,10 +1716,22 @@
             "value": "Así sonará una alerta de sismo. Esto es solo una prueba."
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Así sonará una alerta de sismo. Esto es solo una prueba."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "É assim que um alerta de terremoto vai tocar. Isto é só um teste."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Bir deprem uyarısı böyle duyulur. Bu sadece bir testtir."
           }
         }
       }
@@ -1055,10 +1751,22 @@
             "value": "Alerta de prueba"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alerta de prueba"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Alerta de teste"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Test uyarısı"
           }
         }
       }
@@ -1074,10 +1782,22 @@
             "value": "Location updated %@. Open the app in your area to update it."
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ubicación actualizada %@. Abra la app en su zona para actualizarla."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Localização atualizada %@. Abra o app na sua região para atualizá-la."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Konum güncellendi: %@. Güncellemek için uygulamayı kendi bölgenizde açın."
           }
         }
       }
@@ -1090,10 +1810,22 @@
             "value": "One More Step"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un paso más"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Mais um passo"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Bir Adım Daha"
           }
         }
       }

@@ -1,5 +1,6 @@
-"""Fills en and pt-BR in the String Catalogs, every entry "needs_review" until a native reviewer
-and investigator's docs/research/languages.md (official protective-action wording) sign off.
+"""Fills en, pt-BR and tr in the String Catalogs, every entry "needs_review" until a native
+reviewer signs off, and es-CL. Protective-action wording comes from each country's agency, per
+docs/research/languages.md §2; never invented.
 Consent and legal texts stay Spanish-only (shouldTranslate false): the legal work covers
 Colombia only. Run from ios-client/: python3 tools/translations.py"""
 import json
@@ -77,8 +78,6 @@ TRANSLATIONS = {
 }
 
 # The push keys from docs/ios-contract.md, "Localized text". Not in the source code, so kept here.
-# Protective-action wording (ALERT_BODY_*, LATE_ALERT_BODY) stays Spanish in every language
-# until investigator's docs/research/languages.md gives the official phrases: never invented.
 CONTRACT_SPANISH = {
     "ALERT_TITLE": "Alerta de sismo",
     "ALERT_BODY_MAGNITUDE": "Sismo M%@ cerca de su zona. Protéjase ahora.",
@@ -94,9 +93,12 @@ CONTRACT_SPANISH = {
     "NO_COVERAGE_TITLE": "Sin cobertura en su zona",
     "NO_COVERAGE_BODY": "Su zona todavía no tiene cobertura.",
 }
-AWAITING_OFFICIAL_WORDING = {"ALERT_BODY_MAGNITUDE", "ALERT_BODY_NO_MAGNITUDE", "LATE_ALERT_BODY"}
-TRANSLATIONS.update({key: (CONTRACT_SPANISH[key], CONTRACT_SPANISH[key]) for key in AWAITING_OFFICIAL_WORDING})
+# Protective-action wording. English: ShakeOut/USGS "Drop, Cover, and Hold On" (languages.md §2).
+# Portuguese: no official phrase researched (Portuguese is second wave), so the Spanish stays.
 TRANSLATIONS.update({
+    "ALERT_BODY_MAGNITUDE": ("M%@ earthquake near your area. Drop, Cover, and Hold On.", CONTRACT_SPANISH["ALERT_BODY_MAGNITUDE"]),
+    "ALERT_BODY_NO_MAGNITUDE": ("Possible earthquake near your area. Drop, Cover, and Hold On.", CONTRACT_SPANISH["ALERT_BODY_NO_MAGNITUDE"]),
+    "LATE_ALERT_BODY": ("The earthquake happened %@ min ago. This is no longer an early warning.", CONTRACT_SPANISH["LATE_ALERT_BODY"]),
     "ALERT_TITLE": ("Earthquake Alert", "Alerta de terremoto"),
     "LATE_ALERT_TITLE": ("Late Earthquake Notice", "Aviso de terremoto atrasado"),
     "TEST_ALERT_TITLE": ("Test Alert", "Alerta de teste"),
@@ -108,6 +110,86 @@ TRANSLATIONS.update({
     "NO_COVERAGE_TITLE": ("No Coverage in Your Area", "Sem cobertura na sua região"),
     "NO_COVERAGE_BODY": ("Your area has no coverage yet.", "Sua região ainda não tem cobertura."),
 })
+
+# Turkish. Contract keys from languages.md §2 (AFAD's "Çök, Kapan, Tutun"); the rest translated
+# here in the formal "siz" form, matching the Spanish "usted". Not checked by a native speaker yet.
+TURKISH = {
+    "Abrir Ajustes": "Ayarları Aç",
+    "Activar": "Etkinleştir",
+    "Activar alertas": "Uyarıları Aç",
+    "Activo": "Etkin",
+    "Ahora mismo no podemos avisarle. Lo estamos arreglando.": "Şu anda sizi uyaramıyoruz. Sorunu gideriyoruz.",
+    "Ahora mismo no podemos avisarle. Revise su conexión a internet.": "Şu anda sizi uyaramıyoruz. İnternet bağlantınızı kontrol edin.",
+    "Alerta de prueba": "Test Uyarısı",
+    "Alerta de sismo": "Deprem Uyarısı",
+    "Alertas activas": "Uyarılar Açık",
+    "Alertas de sismo": "Deprem Uyarıları",
+    "Alertas desactivadas": "Uyarılar Kapalı",
+    "Aviso atrasado": "Gecikmiş Bildirim",
+    "Cerrar": "Kapat",
+    "Cobertura": "Kapsama",
+    "Cobertura completa": "Tam kapsama",
+    "Cobertura limitada: solo le avisaremos de sismos fuertes.": "Sınırlı kapsama: yalnızca güçlü depremlerde sizi uyarırız.",
+    "Cobertura parcial: algunos sismos pequeños podrían no avisarse.": "Kısmi kapsama: bazı küçük depremler için uyarı gelmeyebilir.",
+    "Con Concentración activa, el aviso puede llegar en silencio.": "Bir Odak açıkken uyarı sessiz gelebilir.",
+    "Enviada. Debería sonar en unos segundos.": "Gönderildi. Birkaç saniye içinde çalmalı.",
+    "Enviando…": "Gönderiliyor…",
+    "Espere unos minutos para probar de nuevo.": "Tekrar denemek için birkaç dakika bekleyin.",
+    "Falta su ubicación": "Konum Gerekli",
+    "La usamos para elegir los sensores cercanos. Su posición exacta no sale del teléfono.": "Yakındaki sensörleri seçmek için kullanırız. Tam konumunuz telefondan çıkmaz.",
+    "Las alertas pueden no sonar": "Uyarılar Çalmayabilir",
+    "Le avisamos cuando se detecta un sismo cerca de usted.": "Yakınınızda bir deprem algılandığında sizi uyarırız.",
+    "Le enviamos una alerta de prueba para que escuche cómo suena.": "Nasıl çaldığını duymanız için size bir test uyarısı göndeririz.",
+    "Llegó. Así sonará una alerta.": "Ulaştı. Bir uyarı böyle çalacak.",
+    "Muestra los sensores que lo cubren": "Sizi kapsayan sensörleri gösterir",
+    "Ningún sensor cerca por ahora.": "Şimdilik yakında sensör yok.",
+    "No llegó. Revise que las notificaciones estén activadas.": "Ulaşmadı. Bildirimlerin açık olduğunu kontrol edin.",
+    "No se pudo enviar. Revise su conexión a internet.": "Gönderilemedi. İnternet bağlantınızı kontrol edin.",
+    "Permita las notificaciones para que la alerta le llegue al instante.": "Uyarının size anında ulaşması için bildirimlere izin verin.",
+    "Probar alerta": "Test Uyarısı Gönder",
+    "Recibida %@": "Alındı: %@",
+    "Reintentando. Mientras tanto no recibirá alertas.": "Yeniden deneniyor. Bu sırada uyarı almayacaksınız.",
+    "Sensores que lo cubren": "Sizi kapsayan sensörler",
+    "Servicio interrumpido": "Hizmet Kesintide",
+    "Servicio interrumpido: ahora mismo no podemos avisarle.": "Hizmet kesintide: şu anda sizi uyaramıyoruz.",
+    "Sin conexión con el servidor": "Sunucuyla Bağlantı Yok",
+    "Sin cobertura aún": "Henüz Kapsama Yok",
+    "Sin datos": "Veri yok",
+    "Sin permiso no podemos avisarle.": "İzin olmadan sizi uyaramayız.",
+    "Sin señal": "Sinyal yok",
+    "Su posición exacta no sale del teléfono.": "Tam konumunuz telefondan çıkmaz.",
+    "Su teléfono aún no está registrado. Reintentando.": "Telefonunuz henüz kayıtlı değil. Yeniden deneniyor.",
+    "Su zona todavía no tiene cobertura.": "Bölgenizde henüz kapsama alanı yok.",
+    "Ubicación actualizada %@. Abra la app en su zona para actualizarla.": "Konum güncellendi: %@. Güncellemek için uygulamayı kendi bölgenizde açın.",
+    "Un paso más": "Bir Adım Daha",
+    "Verifique sus alertas de sismo": "Deprem uyarılarınızı kontrol edin",
+    "Abra la app para confirmar que sus alertas siguen activas.": "Uyarılarınızın hâlâ açık olduğunu doğrulamak için uygulamayı açın.",
+    # Push, docs/ios-contract.md
+    "ALERT_TITLE": "Deprem uyarısı",
+    "ALERT_BODY_MAGNITUDE": "Bölgenize yakın M%@ deprem. Çök, Kapan, Tutun.",
+    "ALERT_BODY_NO_MAGNITUDE": "Bölgenize yakın olası deprem. Çök, Kapan, Tutun.",
+    "LATE_ALERT_TITLE": "Gecikmiş deprem bildirimi",
+    "LATE_ALERT_BODY": "Deprem %@ dakika önce oldu. Artık erken uyarı değildir.",
+    "TEST_ALERT_TITLE": "Test uyarısı",
+    "TEST_ALERT_BODY": "Bir deprem uyarısı böyle duyulur. Bu sadece bir testtir.",
+    "SERVICE_DOWN_TITLE": "Hizmet kesintide",
+    "SERVICE_DOWN_BODY": "Şu anda sizi uyaramıyoruz.",
+    "COVERAGE_RESTORED_TITLE": "Kapsama alanı yeniden aktif",
+    "COVERAGE_RESTORED_BODY": "Bölgenizdeki uyarılar tekrar çalışıyor.",
+    "NO_COVERAGE_TITLE": "Bölgenizde kapsama yok",
+    "NO_COVERAGE_BODY": "Bölgenizde henüz kapsama alanı yok.",
+    # InfoPlist
+    "CFBundleDisplayName": "Sismo",
+    "NSLocationWhenInUseUsageDescription": "Konumunuz en yakın deprem sensörlerini seçmek için kullanılır. Sunucuya tam konumunuz değil, yalnızca yaklaşık bir bölge gider.",
+    "NSLocationAlwaysAndWhenInUseUsageDescription": "Seyahat ettiğinizde, uygulama kapalıyken bile sensör değiştirmek için. Sunucuya tam konumunuz değil, yalnızca yaklaşık bir bölge gider.",
+}
+
+# Chile: SENAPRED's "Agáchate, Cúbrete y Afírmate" (languages.md §2) in place of "Protéjase ahora".
+# Quoted as the agency says it, in "tú", although the rest of the app speaks "usted".
+CHILE_OVERRIDES = {
+    "ALERT_BODY_MAGNITUDE": "Sismo M%@ cerca de su zona. Agáchate, Cúbrete y Afírmate.",
+    "ALERT_BODY_NO_MAGNITUDE": "Posible sismo cerca de su zona. Agáchate, Cúbrete y Afírmate.",
+}
 
 INFOPLIST_SPANISH = {
     "CFBundleDisplayName": "Sismo",
@@ -132,8 +214,16 @@ def fill(path, extra_keys=None):
             entry.pop("localizations", None)
             continue
         english, portuguese = TRANSLATIONS[key]  # KeyError = a new string without translations: add it
-        entry.setdefault("localizations", {}).update(
-            {"en": unit(english, "needs_review"), "pt-BR": unit(portuguese, "needs_review")})
+        spanish = entry.get("localizations", {}).get("es", {}).get("stringUnit", {}).get("value", key)
+        # Complete, not just the overrides: a regional .lproj does not fall back to es.lproj for a
+        # missing key, the phone would show the raw key.
+        chilean = unit(CHILE_OVERRIDES[key], "needs_review") if key in CHILE_OVERRIDES else unit(spanish, "translated")
+        entry.setdefault("localizations", {}).update({
+            "es-CL": chilean,
+            "en": unit(english, "needs_review"),
+            "pt-BR": unit(portuguese, "needs_review"),
+            "tr": unit(TURKISH[key], "needs_review"),
+        })
     json.dump(catalog, open(path, "w"), ensure_ascii=False, indent=2, sort_keys=True)
 
 

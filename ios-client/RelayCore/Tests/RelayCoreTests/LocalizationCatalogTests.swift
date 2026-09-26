@@ -5,7 +5,8 @@ import XCTest
 /// contract lists is in the app's catalog (APNs looks loc-keys up in the app's Localizable table;
 /// a missing one shows the raw key on the lock screen).
 final class LocalizationCatalogTests: XCTestCase {
-    static let shippedLanguages = ["es", "en", "pt-BR"]
+    /// es-CL is complete, not only its overrides: a regional .lproj does not fall back to es.lproj.
+    static let shippedLanguages = ["es", "es-CL", "en", "pt-BR", "tr"]
     static let iosClient = URL(filePath: #filePath).deletingLastPathComponent().appending(path: "../../..").standardized
     static let catalogs = ["EarthquakeRelay/Localizable.xcstrings", "EarthquakeRelay/InfoPlist.xcstrings",
                            "RelayCore/Sources/RelayCore/Localizable.xcstrings"]

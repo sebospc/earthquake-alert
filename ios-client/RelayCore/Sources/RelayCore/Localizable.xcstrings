@@ -9,10 +9,22 @@
             "value": "Open the app to confirm your alerts are still on."
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abra la app para confirmar que sus alertas siguen activas."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Abra o app para confirmar que seus alertas continuam ativos."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Uyarılarınızın hâlâ açık olduğunu doğrulamak için uygulamayı açın."
           }
         }
       }
@@ -25,10 +37,22 @@
             "value": "Check your earthquake alerts"
           }
         },
+        "es-CL": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verifique sus alertas de sismo"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
             "value": "Verifique seus alertas de terremoto"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Deprem uyarılarınızı kontrol edin"
           }
         }
       }

@@ -27,7 +27,24 @@ final class PushTextTests: XCTestCase {
 
         let english = try XCTUnwrap(PushText.resolve(userInfo: alertPush, locale: Locale(identifier: "en_US"), localizedFormat: catalog("en")))
         XCTAssertEqual(english.title, "Earthquake Alert")
-        XCTAssertEqual(english.body, "Sismo M4.8 cerca de su zona. Protéjase ahora.", "safety wording stays Spanish until languages.md")
+        XCTAssertEqual(english.body, "M4.8 earthquake near your area. Drop, Cover, and Hold On.")
+
+        let turkish = try XCTUnwrap(PushText.resolve(userInfo: alertPush, locale: Locale(identifier: "tr_TR"), localizedFormat: catalog("tr")))
+        XCTAssertEqual(turkish.title, "Deprem uyarısı")
+        XCTAssertEqual(turkish.body, "Bölgenize yakın M4,8 deprem. Çök, Kapan, Tutun.")
+    }
+
+    func testChileGetsSENAPREDWording() throws {
+        let chilean = try XCTUnwrap(PushText.resolve(userInfo: alertPush, locale: Locale(identifier: "es_CL"), localizedFormat: catalog("es-CL")))
+        XCTAssertEqual(chilean.title, "Alerta de sismo")
+        XCTAssertEqual(chilean.body, "Sismo M4,8 cerca de su zona. Agáchate, Cúbrete y Afírmate.")
+    }
+
+    /// No official Portuguese protective-action phrase was researched: the Spanish one stays.
+    func testPortugueseKeepsTheSpanishSafetyWording() throws {
+        let portuguese = try XCTUnwrap(PushText.resolve(userInfo: alertPush, locale: Locale(identifier: "pt_BR"), localizedFormat: catalog("pt-BR")))
+        XCTAssertEqual(portuguese.title, "Alerta de terremoto")
+        XCTAssertEqual(portuguese.body, "Sismo M4,8 cerca de su zona. Protéjase ahora.")
     }
 
     func testCatalogWithoutTheKeyFallsBackToTheSpanishPayloadNeverTheRawKey() throws {
@@ -56,6 +73,10 @@ final class PushTextTests: XCTestCase {
         ]
         let text = try XCTUnwrap(PushText.resolve(userInfo: late, locale: Locale(identifier: "es_CO"), localizedFormat: catalog("es")))
         XCTAssertEqual(text.body, "El sismo ocurrió hace 3 min. Ya no es un aviso anticipado.")
+        let english = try XCTUnwrap(PushText.resolve(userInfo: late, locale: Locale(identifier: "en_US"), localizedFormat: catalog("en")))
+        XCTAssertEqual(english.body, "The earthquake happened 3 min ago. This is no longer an early warning.")
+        let turkish = try XCTUnwrap(PushText.resolve(userInfo: late, locale: Locale(identifier: "tr_TR"), localizedFormat: catalog("tr")))
+        XCTAssertEqual(turkish.body, "Deprem 3 dakika önce oldu. Artık erken uyarı değildir.")
     }
 
     func testPushWithoutLocKeysIsLeftAlone() {

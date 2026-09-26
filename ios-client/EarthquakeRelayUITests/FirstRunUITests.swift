@@ -31,8 +31,9 @@ final class FirstRunUITests: XCTestCase {
 /// Never point it at a live host.
 final class TestAlertUITests: XCTestCase {
     /// The gateway accepted it: "sent", in each language (the pseudolanguage is not checked word by word).
-    static let sentLine = ["es": "Enviada. Debería sonar en unos segundos.", "en": "Sent. It should sound in a few seconds.",
-                           "pt-BR": "Enviado. Deve tocar em alguns segundos."]
+    static let sentLine = ["es": "Enviada. Debería sonar en unos segundos.", "es-CL": "Enviada. Debería sonar en unos segundos.",
+                           "en": "Sent. It should sound in a few seconds.",
+                           "pt-BR": "Enviado. Deve tocar em alguns segundos.", "tr": "Gönderildi. Birkaç saniye içinde çalmalı."]
 
     func testProbarAlertaIsAcceptedByTheGateway() throws {
         let app = XCUIApplication.underTest()
