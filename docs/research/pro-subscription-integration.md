@@ -137,13 +137,69 @@ From Apple's "Set up offer codes" page [V], unless tagged otherwise:
   eligibility. How Apple applies a code to someone who is already subscribed was not
   checked. [U]
 
+## 4. Regional relief banner (approved 26-sep, scoped, not built)
+
+Blocked on the real offer code, which needs the Apple account. The gateway side belongs to
+developer; this is the proposal for `docs/ios-contract.md`, not a change to it.
+
+### The /status field
+
+A top-level `relief` array in `GET /status`, the same answer for every phone:
+
+```json
+"relief": [{
+  "id": "2026-10-cali",
+  "until": "2026-12-31T23:59:59Z",
+  "area": { "lat": 3.45, "lon": -76.53, "radius_km": 150 },
+  "redeem_url": "https://apps.apple.com/redeem?ctx=offercodes&id=<app id>&code=SISMOAYUDA"
+}]
+```
+
+- **Why an area, not grid cells.** A 150 km radius is about 580 of the 0.1° demand cells. A
+  cell list is long, and every relief means a big hand-edited list. A center and a radius is
+  three numbers, and the phone already computes distances (`ReceptorChooser`).
+- **Why the phone filters.** `/status` stays one public answer and the phone checks its own
+  position against the area. Nothing about the phone is sent, so there is no new data for
+  Ley 1581. A server-side check would need the phone's cell on every `/status` call.
+- **The code in a public answer is fine.** Custom codes are not secret anyway, see §3
+  "Not regional". The area only decides who sees the banner, not who can redeem.
+- **The URL form is unverified.** `redeem_url` needs checking against the real App Store
+  Connect link once the offer exists. [U] Sending the full URL keeps the app from building it.
+- **Who sets it.** The gateway reads it from a small JSON file (like `sensors.json`), re-read
+  without a restart. The account holder activates the code in App Store Connect first, then
+  the file gets the entry. An expired entry (`until` before the server's `now`) is ignored
+  by the phone even if nobody removes it.
+
+### In the app
+
+- **One neutral row in Cobertura, under the coverage state.** It is never on the alert
+  screen and never above the alert state. The text is "Pro gratis por un tiempo para la zona
+  afectada", with no safety claim (`positioning-and-pricing.md`). The row opens `redeem_url`,
+  and the user can close it; the app remembers that per `id`, only on the phone.
+- **Shown only when all of these hold:** the phone's last known position is inside the
+  area, `until` is after `/status`'s `now`, and `ProEntitlement.isActive` is false.
+  Without location permission, the app uses the center of its last demand cell.
+- **No push.** The row appears the next time the user opens the app. Relief is not
+  urgent, and the alert channel stays alerts only (§3).
+- **Life-safety guard.** `relief` is decoded separately from `sensors`. A missing or
+  malformed `relief` must never break the coverage state; it is simply ignored. The test is a
+  `/status` answer with a broken `relief` that still gives the right coverage state.
+- **Text.** es, en and tr, marked `needs_review`, through `tools/translations.py` like the
+  rest.
+
+### Size when built
+
+- App: about 60 lines. `Relief` decoding and a pure `ReliefBanner.shouldShow(position:,
+  now:, pro:, dismissed:)` in RelayCore, with tests; one row in `CoverageView`.
+- Gateway: the file read and the field, owned by developer. QA reviews both.
+
 ## Open questions for the user
 
 - Price and trial for the monthly and yearly products (pending from `pro-tier-features.md`).
 - Whether Family Sharing is on.
 - Which relief period to pre-create: 1, 3 or 6 months.
-- Whether distribution (c), the in-app regional banner, is wanted. It is the only part that
-  touches the gateway.
+- ~~Whether distribution (c), the in-app regional banner, is wanted.~~ Approved 26-sep, scoped in
+  §4.
 
 ## Sources
 
