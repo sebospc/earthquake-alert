@@ -88,11 +88,11 @@ final class TokenLifecycleTests: XCTestCase {
         _ = try await lifecycle.register(token: oldToken, to: .receptors(["chaparral"]))
         await server.holdDeletes()
         let withdraw = Task { await lifecycle.unregister() }
-        await eventually { await self.server.heldDeleteCount == 1 }
+        try await eventually { await self.server.heldDeleteCount == 1 }
 
         let accept = Task { [token = oldToken] in try await lifecycle.register(token: token, to: .receptors(["chaparral"])) }
-        // Gives an early POST every chance to go out; with the DELETE unanswered it must not.
-        await eventually { await self.server.calls.count > 2 }
+        // With the DELETE unanswered, an early POST must not go out.
+        await giveInFlightWorkAChance()
         var calls = await server.calls
         XCTAssertEqual(calls.last, .delete(oldToken), "the POST went out before the DELETE was answered")
 
@@ -110,10 +110,10 @@ final class TokenLifecycleTests: XCTestCase {
         await server.holdPosts()
         await server.optInToTelemetry(true)
         let older = Task { [token = oldToken] in try await lifecycle.register(token: token, to: .receptors(["chaparral"])) }
-        await eventually { await self.server.heldPostCount == 1 }
+        try await eventually { await self.server.heldPostCount == 1 }
         await server.optInToTelemetry(false)
         let newer = Task { [token = oldToken] in try await lifecycle.register(token: token, to: .receptors(["chaparral"])) }
-        await eventually { await self.server.heldPostCount == 2 }
+        try await eventually { await self.server.heldPostCount == 2 }
 
         await server.releasePost(1)
         _ = try await newer.value
@@ -132,7 +132,7 @@ final class TokenLifecycleTests: XCTestCase {
         let lifecycle = lifecycle()
         await server.holdPosts()
         let register = Task { [token = oldToken] in try await lifecycle.register(token: token, to: .receptors(["chaparral"])) }
-        await eventually { await self.server.heldPostCount == 1 }
+        try await eventually { await self.server.heldPostCount == 1 }
         await lifecycle.unregister()
 
         await server.releasePost(0)
@@ -293,7 +293,24 @@ actor FakeRegistrar: DeviceRegistrar {
     }
 }
 
-/// Waits until `condition` holds, for held requests to be sent.
-func eventually(_ condition: () async -> Bool) async {
-    for _ in 0..<1000 where !(await condition()) { await Task.yield() }
+struct ConditionTimedOut: Error {}
+
+/// Waits until `condition` holds, for held requests to be sent. A wall-clock deadline, not a count
+/// of yields: on a slow CI runner a yield count ran out first, and the test went on to crash on a
+/// request that had not been sent yet. Now it fails here, with the line that waited.
+func eventually(within timeout: Duration = .seconds(5), file: StaticString = #filePath, line: UInt = #line,
+                _ condition: () async -> Bool) async throws {
+    let deadline = ContinuousClock.now + timeout
+    while !(await condition()) {
+        guard ContinuousClock.now < deadline else {
+            XCTFail("condition still false after \(timeout)", file: file, line: line)
+            throw ConditionTimedOut()
+        }
+        try await Task.sleep(for: .milliseconds(1))
+    }
+}
+
+/// For asserting that something does not happen: gives it time to happen if it were going to.
+func giveInFlightWorkAChance() async {
+    try? await Task.sleep(for: .milliseconds(200))
 }
