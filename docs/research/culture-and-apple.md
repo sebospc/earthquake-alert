@@ -15,11 +15,16 @@ market, same discipline as `legal-colombia.md`.
 ## Recommendation
 
 1. **The "must not look official" problem is not Colombia-specific.** Mexico, Argentina,
-   Peru and the Philippines each have a direct penal-code equivalent to Colombia's Código
-   Penal art. 425-426 (usurping a public function/authority) [V, primary text for AR/PE,
-   R for MX/PH — see §1). The same "we relay Google's alert, we are not the government"
-   framing used in `legal-colombia.md` should transfer to those four. Chile and Turkey:
-   no clean equivalent found this session — flag to counsel, don't assume either way [U].
+   Peru, the Philippines and Chile each have a penal-code equivalent to Colombia's Código
+   Penal art. 425-426 (usurping a public function/authority) — see §1 per country and the
+   dedicated `legal-<country>.md` docs for the full primary-text treatment. **Correction,
+   2026-09-26**: Chile's art. 213 is a real match (this doc originally said none was found,
+   that was wrong — see `legal-chile.md`, read from primary text). Argentina's art. 246 is
+   narrower than the others: it requires actually exercising a public function, not merely
+   looking official (also corrected 2026-09-26 — see `legal-argentina.md`), so the "we relay
+   Google's alert, we are not the government" framing is a safer fit for Mexico, Peru, the
+   Philippines and Chile than for Argentina specifically. Turkey: still no clean equivalent
+   found — flag to counsel, don't assume either way [U].
 
 2. **No color/iconography clash found.** The app's actual scheme — red for danger, orange
    for late alerts, gray for test, white seismograph mark on a red icon (checked directly
@@ -98,14 +103,17 @@ official/governmental (Código Penal art. 425-426), red for danger with no repor
   redistributes SENAPRED alerts [R]. This is the most favorable precedent found in any of
   the six countries: a non-government seismic alert app is already the market leader, which
   suggests Chilean users don't require a "looks official" app to trust it.
-- **Trust signal / legal risk.** No Chilean penal-code equivalent to "usurpación de
-  funciones públicas" specific to acting like an authority was found this session. Chilean
-  law does cover identity impersonation generally (Código Penal art. 214, extended to
-  internet/social media) [R] and misuse of state emblems (flag/shield) under the Ley de
-  Seguridad del Estado or Código de Justicia Militar when done to insult the symbol [R] —
-  neither is a clean match for "an app that looks governmental without claiming to be."
-  Given the Chile Alerta precedent above, this is likely lower-risk than Colombia, but
-  **not researched to the point of confidence** — flag to counsel, don't assume it's safe [U].
+- **Trust signal / legal risk.** **Correction, 2026-09-26**: Chile does have a penal-code
+  equivalent — art. 213 punishes feigning public authority/employment and acting as such
+  [V, read from primary text, see `legal-chile.md`]. The version of this doc that said no
+  equivalent was found was a search-depth failure, not an absence in the law. Chilean law
+  also separately covers identity impersonation generally (art. 214, extended to
+  internet/social media) [R] and misuse of state emblems under the Ley de Seguridad del
+  Estado or Código de Justicia Militar [R], but art. 213 is the actual match for "an app
+  that looks governmental without claiming to be." Given the Chile Alerta precedent above
+  plus art. 213 now confirmed, the same mitigation used for Colombia (never claim official
+  status, name the real source plainly) applies here too — **[LAWYER]** should still confirm
+  the reading holds for this specific app.
 - **Color/iconography.** No clash found.
 - **Tone.** Chilean formal register is tuteo/usted; voseo is informal/colloquial only [R].
   Safe to keep the same formal register as Colombia.
@@ -138,11 +146,15 @@ official/governmental (Código Penal art. 425-426), red for danger with no repor
   other country in this set, currently has **no dedicated seismic-alert app of its own** —
   arguably the most receptive market for a new one, but also nothing to imitate or compete
   against on trust cues.
-- **Trust signal / legal risk.** Argentina's Código Penal art. 246 ("usurpación de
-  autoridad") punishes assuming or exercising a public function without title or
-  appointment [V, article text found and quoted, tagging [R] since the primary Código Penal
-  document was not opened directly this session]. Direct equivalent to Colombia's rule.
-  Same mitigation applies.
+- **Trust signal / legal risk.** **Correction, 2026-09-26**: read from primary text in
+  `legal-argentina.md`, Argentina's Código Penal art. 246 ("usurpación de autoridad") is
+  narrower than this doc originally stated — it requires actually assuming or exercising a
+  public function, not merely looking or seeming official. A private app that never claims
+  to be a government service and never performs an actual government function is a weaker
+  fit for art. 246 than Colombia's art. 425-426 is for Colombia. Art. 247 (unauthorized use
+  of insignia/titles) is closer but still narrower. The mitigation (never claim official
+  status, name the real source plainly) is still the right thing to do, but the legal
+  exposure it's mitigating is less direct here than assumed — **[LAWYER]** should confirm.
 - **Color/iconography.** No clash found.
 - **Tone.** This is the one genuinely distinct case: Argentina's everyday spoken and
   written Spanish is voseo (vos, not tú), officially recognized since 1982 [R]. However,
@@ -270,11 +282,13 @@ official/governmental (Código Penal art. 425-426), red for danger with no repor
 - Philippines PHIVOLCS/NDRRMC/ECBS: [PHIVOLCS](https://www.phivolcs.dost.gov.ph/earthquake-monitoring-system/); [Wikipedia, Emergency Cell Broadcast System](https://en.wikipedia.org/wiki/Emergency_Cell_Broadcast_System) — [R]
 - Turkey AFAD apps: [AFAD](https://www.afad.gov.tr/deprem-mobil-uygulamasi) — [R]
 - Mexico usurpación de funciones públicas: [Estado de México Código Penal art. 176](https://leyes-mx.com/codigo_penal_mexico/176.htm) — [R]
-- Argentina Código Penal art. 246: [Pensamiento Penal](https://www.pensamientopenal.com.ar/cpcomentado/37790-art-246-247-usurpacion-autoridad-titulos-y-honores) — [R]
+- Argentina Código Penal art. 246: [Pensamiento Penal](https://www.pensamientopenal.com.ar/cpcomentado/37790-art-246-247-usurpacion-autoridad-titulos-y-honores) — [R]; corrected and superseded by a primary-text read in `docs/research/legal-argentina.md` — [V]
 - Peru Código Penal art. 361: [LP Derecho](https://lpderecho.pe/articulo-361-codigo-penal-usurpacion-funcion-publica/) — [R]
 - Philippines RPC art. 177/179: [jur.ph](https://jur.ph/law/summary/rules-regulations-coat-of-arms-great-seal-philippines); [Legal Resource PH, Title 4](https://library.legalresource.ph/title-4-crimes-against-public-interest-book-2-revised-penal-code/) — [R]
 - Turkey TCK 204/264: [Barandoğan, TCK 264](https://barandogan.av.tr/blog/mevzuat/tck-madde-264-ozel-isaret-ve-kiyafetleri-usulsuz-kullanma-sucu.html) — [R]
 - Chile identity/emblem law: [Conceptos Jurídicos, Suplantación en Chile](https://www.conceptosjuridicos.com/cl/usurpacion-del-estado-civil/); [Editorial Hammurabi, Símbolos Patrios](https://www.editorialhammurabi.com/2026/04/08/simbolos-patrios-de-chile-historia-regulacion-legal-y-uso-correcto-de-nuestros-emblemas/) — [R]
+- Chile Código Penal art. 213 (usurpación de autoridad, the equivalent this doc originally
+  missed): primary text read in `docs/research/legal-chile.md` — [V]
 - Voseo/tuteo/usted: [RAE, voseo](https://www.rae.es/dpd/voseo); search summary of Argentine/Chilean academic sources — [R]
 - Turkish formal register: [Elon.io, Formal Register siz](https://elon.io/grammar/turkish/register/formal-siz) — [R]
 - Color symbolism (yellow/mourning, red/orange/danger): [Shutterstock, Color Symbolism](https://www.shutterstock.com/blog/color-symbolism-and-meanings-around-the-world); [Yatskia Urns, Mourning Colors](https://www.yatskiaurns.com/blogs/news/understanding-the-different-colors-of-mourning-in-various-countries) — [R]
