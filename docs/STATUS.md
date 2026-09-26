@@ -12,8 +12,8 @@ Updated: 2026-09-25 23:20 UTC. Whoever finishes a piece of work updates this fil
 | AWS | CloudWatch (since 25-sep 00:30): logs + 5 alarms to SNS email (gateway down, receptor uncovered 10 min, AEA location > 21 h, AEA_NOT_OK, NUDGE_FAILED). Stacks aea-lab-cloudwatch, aea-lab-alarms-i-0d1c0b6dd02e0ae61 | CloudWatch console, sa-east-1 |
 
 adb on the EC2: always `sudo -u aea -H /opt/android-sdk/platform-tools/adb`.
-Deploy: gateway and host tools go through the pipeline (push to main → CI → approve `production`; live since ff276ae, 25-sep). A bootstrap rerun, only for host changes: `git archive origin/main` to the host + `sudo EMULATOR_COUNT=3 VAPID_SUBJECT=mailto:alertas@example.com ./aws-bootstrap.sh`; APK: `./aws-bootstrap.sh listener <apk> emulator-NNNN=<sensor_id>...` (explicit pairs).
-Live sha: `8387d62` (gateway batch + listener fix), deployed 25-sep 23:11 UTC, verified on host: chaparral/quibdo/general-santos all `covered: true`, `aea_ok: true`, fresh heartbeats. `719b15c` (backup batch) and `f407540` (iOS app) pushed and CI green, not yet deployed — backup's timer install still needs the stack update + passphrase (next steps below), iOS ships via TestFlight, not this pipeline.
+Deploy: gateway and host tools go through the pipeline (push to main → CI → auto-deploys). **26-sep: the `production` environment's required-reviewer gate was removed at the user's request** — green CI on main now deploys automatically, no manual click. Revert by re-adding `sebospc` as a required reviewer on the `production` environment if wanted back. A bootstrap rerun, only for host changes: `git archive origin/main` to the host + `sudo EMULATOR_COUNT=3 VAPID_SUBJECT=mailto:alertas@example.com ./aws-bootstrap.sh`; APK: `./aws-bootstrap.sh listener <apk> emulator-NNNN=<sensor_id>...` (explicit pairs).
+Live sha: `48b3a54` (health page), deployed 26-sep, verified on host: chaparral/quibdo/general-santos all `covered: true`, `aea_ok: true`, fresh heartbeats. Backup batch's timer install still needs the stack update + passphrase (next steps below); iOS ships via TestFlight, not this pipeline.
 
 ## Proven
 
