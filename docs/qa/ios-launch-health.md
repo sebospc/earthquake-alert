@@ -106,17 +106,29 @@ by nature, not something to automate away:
 
 ## 4. Cross-check with devops-earthquake's Apple-infra design
 
-Not written yet (coordinator asked devops for it after asking me for this doc). Once it
-exists, reconcile:
-- Who owns the "APNs config broken" alert path end to end — devops if it's a CloudWatch/SNS
-  addition, QA if it's a certifier rule, or both if it's both (likely: devops wires the alarm,
-  QA proves the gateway actually emits a distinguishable signal for it, per §1's QA-115
-  candidate above).
-- Whether devops's design assumes the same "uncovered = APNs config OR AEA OR emulator, can't
-  tell apart yet" gap noted in §1, so the two docs don't quietly disagree on whether that gap is
-  already closed.
-- Membership/key renewal calendar ownership (§1) — likely devops, since it's account-level, but
-  say so explicitly once their doc exists rather than leaving it unclaimed by either doc.
+Reconciled against `docs/ops/apple-infra.md` (devops, landed `eb8aae8`):
+
+- **APNs-alert ownership, closed.** Their §"Expiry monitoring" §4 confirms the same path §1
+  above found independently: a rejected config logs `APNs rejects our configuration (...)` and
+  the receptor goes `covered: false`, which the existing `receptor-uncovered` alarm already
+  pages on. No new CloudWatch alarm needed. Agrees with this doc.
+- **Membership/key renewal calendar, closed, devops' call confirmed right.** Goes on the user's
+  calendar (membership 1 yr, TestFlight build 90 days, cert/profile 1 yr, .p8 key never expires
+  — only revocation), not CloudWatch: none of those are visible from the host without an
+  App Store Connect key that's too powerful to put there, and they fail at build/install time
+  where a person already notices. §1 above had this as "likely devops" — confirmed.
+- **Still open, QA-115 stands.** Their doc's own gap analysis names it too, independently: "the
+  gateway only learns APNs rejects it when it sends something" — a key revoked on a quiet week
+  stays silently broken until the next real quake reaches nobody. Their fix, and it's a real new
+  assignment to developer-qa (their checklist item 4, their exact words): **a scheduled test
+  push to an opted-in telemetry phone, running continuously, so a revoked key turns
+  `receptor-uncovered` within hours instead of at the next quake — required to be running before
+  `APNS_DRY_RUN=0` goes on for real users.** This is bigger than a QA-115 note: it's a go-live
+  gate. Folded into `docs/qa/iphone-latency.md`'s certifier-integration section, since it's the
+  same push-and-measure mechanism as T5, just run continuously instead of once. `covered: false`
+  still won't say *which* of APNs/AEA/emulator caused it at the alarm level even once this
+  ships — that specific "alarm fires vs. alarm names the cause" gap is unaddressed by either doc
+  and stays QA-115, informational until there's a real key to test the log line against.
 
 ## Open questions
 

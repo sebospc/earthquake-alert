@@ -109,6 +109,20 @@ itself.
 
 ## Certifier integration (after the first T5 numbers exist)
 
+**This section is now a go-live gate, not only a nice-to-have.** Per `docs/ops/apple-infra.md`
+(devops): the gateway only learns an APNs key is revoked when it tries to send something. A key
+revoked on a quiet week stays silently broken until the next real quake reaches nobody. Their
+fix, assigned to developer-qa: a scheduled test push to an opted-in telemetry phone, running
+continuously (not just the one-off T5 burst above), so a revoked key turns `receptor-uncovered`
+within hours instead of at the next quake. **Must be running before `APNS_DRY_RUN=0` stays on
+for real users** — this is the same push-and-measure mechanism as T5, just on a recurring
+schedule instead of a manual burst, so it belongs here rather than as separate new work.
+Design not yet built: pick an interval (every few hours, per devops' wording — a specific
+number isn't set in either doc yet, worth a coordinator call once there's a real key to tune
+against), reuse `/probe/apns-burst` with `n=1` on a timer, feed its result into the same
+`/telemetry/arrivals` path T5 uses, and let the existing 5-min-no-arrival certifier rule
+(below) be the alarm — no new alarm type needed, only the recurring trigger.
+
 Per `monitor/README.md`'s existing verdict model (CERTIFIED / DEGRADED / FAIL, one rule per
 cause):
 
