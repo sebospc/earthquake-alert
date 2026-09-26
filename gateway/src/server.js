@@ -764,6 +764,7 @@ export function createServer(config) {
     .filter(name => STATIC_TYPES[extname(name)])
     .map(name => [`/${name}`, name]));
   staticFiles.set("/", "index.html");
+  staticFiles.set("/health", "health.html");
 
   function sensorHealth(sensorId, now) {
     const heartbeatAt = lastHeartbeatAt.get(sensorId);

@@ -972,3 +972,12 @@ test("a demand-only phone never gets an alert, and a covered phone still does", 
   await wait(300);
   assert.deepEqual(apns.all.filter(push => push.payload.kind === "alert").map(push => push.token), [PHONE]);
 });
+
+test("GET /health serves the status page, unauthenticated like /status", async t => {
+  const { port } = await startGateway(t);
+  const response = await request(port, "GET", "/health");
+  assert.equal(response.status, 200);
+  assert.match(response.body, /health\.js/, "the page must load the health-state module");
+  const script = await request(port, "GET", "/health.js");
+  assert.equal(script.status, 200, "the module the page imports must actually be served");
+});

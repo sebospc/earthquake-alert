@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gateway health</title>
+<style>
+  :root { color-scheme: light dark; --ok: #1e7a34; --bad: #b3261e; --warn: #8a5b00; --dim: #6b6b6b; }
+  body { font: 15px/1.45 system-ui, sans-serif; max-width: 40rem; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 1.1rem; }
+  #banner { font-weight: 700; padding: 10px 12px; border-radius: 8px; margin-bottom: 16px; }
+  #banner.ok { background: rgba(30, 122, 52, .12); color: var(--ok); }
+  #banner.warn { background: rgba(138, 91, 0, .12); color: var(--warn); }
+  #banner.bad { background: rgba(179, 38, 30, .12); color: var(--bad); }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid rgba(127, 127, 127, .25); }
+  .ok { color: var(--ok); }
+  .bad { color: var(--bad); }
+  #meta { margin-top: 16px; color: var(--dim); font-size: .9rem; }
+  #updated { color: var(--dim); font-size: .8rem; }
+</style>
+</head>
+<body>
+<h1>Gateway health</h1>
+<div id="banner">Loading…</div>
+<table>
+  <thead><tr><th>Receptor</th><th>Covered</th><th>AEA</th><th>Last heartbeat</th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+<p id="meta"></p>
+<p id="updated"></p>
+<script type="module">
+import { healthState } from "/health.js";
+
+const byId = id => document.getElementById(id);
+const REQUEST_TIMEOUT_MS = 10_000;
+
+// A gateway that hangs must turn the page red, not leave it loading forever.
+async function fetchJson(path) {
+  const response = await fetch(path, { cache: "no-store", signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+  if (!response.ok) throw new Error(`${path} responded ${response.status}`);
+  return response.json();
+}
+
+let lastGoodAt = null;
+
+function render(state) {
+  const banner = byId("banner");
+  banner.className = state.bannerClass;
+  banner.textContent = state.bannerText;
+  byId("rows").innerHTML = state.rows.map(row => `
+    <tr>
+      <td></td>
+      <td class="${row.covered ? "ok" : "bad"}">${row.covered ? "yes" : "no"}</td>
+      <td class="${row.aeaOk ? "ok" : "bad"}">${row.aeaOk ? "yes" : "no"}</td>
+      <td>${row.heartbeatAgo}</td>
+    </tr>`).join("");
+  // Names come from operator-owned sensors.json, but textContent costs nothing extra.
+  [...byId("rows").children].forEach((tr, index) => { tr.firstElementChild.textContent = state.rows[index].name; });
+  byId("meta").textContent = state.meta;
+  byId("updated").textContent = `Updated ${new Date().toLocaleTimeString()}`;
+}
+
+async function load() {
+  const now = Date.now();
+  const [status, sensorConfig] = await Promise.all([
+    fetchJson("/status").catch(() => null),
+    fetchJson("/sensors.json").catch(() => null)
+  ]);
+  if (status && sensorConfig) lastGoodAt = now;
+  render(healthState(status, sensorConfig, now, lastGoodAt));
+}
+
+load();
+setInterval(load, 30_000);
+</script>
+</body>
+</html>
