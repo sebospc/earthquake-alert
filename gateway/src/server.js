@@ -590,12 +590,16 @@ async function mapLimited(items, limit, work) {
  * retry: a passing 429/5xx on a few must not hold back the phones not yet tried.
  * `send(item, lane)` resolves { status, ... }; results keep the items' order, and an item
  * never tried in time reads as status -1.
+ * `isClosed()` stops a later round once the gateway is shutting down: same guard as the
+ * burst loop, so a retry backoff never outlives its own server (CI flake on
+ * "QA-22 a transient push failure...": a stray round from a closed test gateway landed
+ * on the next test's mocked push service).
  */
-async function sendAllWithRetry(items, limit, send, deadlineMs) {
+export async function sendAllWithRetry(items, limit, send, deadlineMs, isClosed = () => false) {
   const results = items.map(() => ({ status: -1 }));
   let pending = items.map((_, index) => index);
   for (const backoff of [0, 500, 1000, 2000, 4000]) {
-    if (pending.length === 0 || Date.now() + backoff >= deadlineMs) break;
+    if (pending.length === 0 || isClosed() || Date.now() + backoff >= deadlineMs) break;
     if (backoff > 0) await sleep(backoff);
     await mapLimited(pending, limit, async (index, lane) => {
       // A long round must not send past the TTL either.
@@ -873,7 +877,7 @@ export function createServer(config) {
     const payload = JSON.stringify(message);
     const results = await sendAllWithRetry(targets, WEB_PUSH_MAX_IN_FLIGHT, ({ subscription }) =>
       sendWebPush(subscription, payload, { ...options, ...vapidOptions(subscription.endpoint) },
-        deadlineMs), deadlineMs);
+        deadlineMs), deadlineMs, () => closed);
     return Promise.all(targets.map(async ({ sensorId, subscription }, index) => {
       const { status, sent_at: sentAt, delivered_at: delivered } = results[index];
       if (isGone(status)) {
@@ -1005,7 +1009,7 @@ export function createServer(config) {
     // Each worker keeps to one connection, so none carries more than Apple's stream limit.
     const results = await sendAllWithRetry(tokens, APNS_STREAMS_PER_CONNECTION * APNS_CONNECTIONS,
       (token, lane) => sendApns(token, payload, collapseId, deadlineMs, lane % APNS_CONNECTIONS),
-      deadlineMs);
+      deadlineMs, () => closed);
     return Promise.all(tokens.map(async (token, index) => {
       const result = results[index];
       // A failed send must not stop the same quake from another sensor reaching this phone.
