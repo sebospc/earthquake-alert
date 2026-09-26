@@ -12,6 +12,8 @@
   #banner.ok { background: rgba(30, 122, 52, .12); color: var(--ok); }
   #banner.warn { background: rgba(138, 91, 0, .12); color: var(--warn); }
   #banner.bad { background: rgba(179, 38, 30, .12); color: var(--bad); }
+  #warning { font-weight: 600; padding: 8px 12px; border-radius: 8px; margin: -8px 0 16px;
+             background: rgba(138, 91, 0, .12); color: var(--warn); }
   table { width: 100%; border-collapse: collapse; }
   th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid rgba(127, 127, 127, .25); }
   .ok { color: var(--ok); }
@@ -23,6 +25,7 @@
 <body>
 <h1>Gateway health</h1>
 <div id="banner">Loading…</div>
+<div id="warning" class="warn" hidden></div>
 <table>
   <thead><tr><th>Receptor</th><th>Covered</th><th>AEA</th><th>Last heartbeat</th></tr></thead>
   <tbody id="rows"></tbody>
@@ -48,6 +51,8 @@ function render(state) {
   const banner = byId("banner");
   banner.className = state.bannerClass;
   banner.textContent = state.bannerText;
+  byId("warning").hidden = !state.warning;
+  byId("warning").textContent = state.warning;
   byId("rows").innerHTML = state.rows.map(row => `
     <tr>
       <td></td>
