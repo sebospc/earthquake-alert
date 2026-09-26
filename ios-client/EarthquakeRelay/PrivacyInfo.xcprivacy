@@ -65,6 +65,8 @@
 			<key>NSPrivacyAccessedAPITypeReasons</key>
 			<array>
 				<string>CA92.1</string>
+				<!-- App Group: the Pro expiry, read by the widget and the Watch. -->
+				<string>1C8F.1</string>
 			</array>
 		</dict>
 	</array>

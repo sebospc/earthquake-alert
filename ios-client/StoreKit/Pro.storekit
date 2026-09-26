@@ -1,0 +1,77 @@
+{
+  "identifier" : "5E1A2C01",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+
+  ],
+  "settings" : {
+
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "5E1A2C02",
+      "localizations" : [
+
+      ],
+      "name" : "Pro",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "0.99",
+          "familyShareable" : false,
+          "groupNumber" : 2,
+          "internalID" : "5E1A2C03",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Placeholder, local testing only",
+              "displayName" : "Pro monthly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "pro.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Pro monthly",
+          "subscriptionGroupID" : "5E1A2C02",
+          "type" : "RecurringSubscription"
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "9.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "5E1A2C04",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Placeholder, local testing only",
+              "displayName" : "Pro yearly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "pro.yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Pro yearly",
+          "subscriptionGroupID" : "5E1A2C02",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 2,
+    "minor" : 0
+  }
+}

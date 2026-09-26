@@ -33,7 +33,9 @@ targets:
     type: application
     platform: iOS
     scheme:
-      testTargets: [EarthquakeRelayUITests]
+      testTargets: [EarthquakeRelayTests, EarthquakeRelayUITests]
+      # Local purchases in the simulator. Placeholder prices, not the real ones (pending the user).
+      storeKitConfiguration: StoreKit/Pro.storekit
     sources:
       - EarthquakeRelay
     dependencies:
@@ -96,6 +98,18 @@ targets:
       path: AlertService/AlertService.entitlements
       properties:
         com.apple.security.application-groups: [group.$(APP_BUNDLE_ID)]
+  EarthquakeRelayTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - EarthquakeRelayTests
+      - path: StoreKit/Pro.storekit
+        buildPhase: resources
+    dependencies:
+      - target: EarthquakeRelay
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: true
   EarthquakeRelayUITests:
     type: bundle.ui-testing
     platform: iOS
