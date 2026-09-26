@@ -34,7 +34,7 @@
 		}
 		@phone_read {
 			method GET HEAD
-			path / /status /*.html /*.js /*.json /*.webmanifest /*.png /*.svg /*.ico
+			path / /status /health /*.html /*.js /*.json /*.webmanifest /*.png /*.svg /*.ico
 		}
 		handle @phone_api {
 			reverse_proxy 127.0.0.1:8787 {

@@ -51,7 +51,7 @@ ours="X-Origin-Verify: $SECRET"
 [[ $(code GET /status "X-Origin-Verify: wrong") == 403 ]] || fail "wrong header must be 403"
 echo "PASS origin secret: ours 200, none 403, wrong 403"
 
-for allowed in "GET /" "GET /sw.js" "GET /sensors.json" "GET /manifest.webmanifest" "POST /subscribe" "POST /devices" "DELETE /devices"; do
+for allowed in "GET /" "GET /health" "GET /sw.js" "GET /sensors.json" "GET /manifest.webmanifest" "POST /subscribe" "POST /devices" "DELETE /devices"; do
   set -- $allowed
   [[ $(code "$1" "$2" "$ours") == 200 ]] || fail "$allowed must reach the gateway"
 done
